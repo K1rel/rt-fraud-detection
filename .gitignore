@@ -1,0 +1,36 @@
+
+`rt-fraud-pipeline/.gitignore`
+```gitignore
+# Java/Maven
+target/
+*.iml
+*.class
+*.log
+
+# IntelliJ
+.idea/
+*.iws
+out/
+
+# Node
+node_modules/
+dist/
+.cache/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archives / tools
+*.tgz
+*.tar.gz
+flink-2.0.0*/
+
+
+scripts/
