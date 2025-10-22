@@ -1,0 +1,27 @@
+{
+  "index_patterns": ["fraud-alerts*"],
+  "priority": 500,
+  "template": {
+    "settings": {
+      "index.number_of_shards": 1,
+      "index.number_of_replicas": 0
+    },
+    "mappings": {
+      "dynamic": "false",
+      "properties": {
+        "@timestamp":        { "type": "date" },
+        "ingest_ts":         { "type": "date" },
+        "alert_id":          { "type": "keyword" },
+        "transaction_id":    { "type": "keyword" },
+        "account_id":        { "type": "keyword" },
+        "amount":            { "type": "double" },
+        "currency":          { "type": "keyword" },
+        "score":             { "type": "float" },
+        "label":             { "type": "keyword" },
+        "reason":            { "type": "keyword" },
+        "model_version":     { "type": "keyword" },
+        "features":          { "type": "object", "enabled": false }
+      }
+    }
+  }
+}
