@@ -31,6 +31,13 @@ Thumbs.db
 *.tgz
 *.tar.gz
 flink-2.0.0*/
+flink/lib/*.jar
+flink/plugins/**/flink-metrics-*.jar
+
 
 
 scripts/
+
+*.swp
+*.swo
+.vscode/
