@@ -1,0 +1,57 @@
+blob:
+  server:
+    port: '6124'
+state:
+  backend:
+    forst:
+      local-dir: /tmp/forst-local
+      cache:
+        size-based-limit: 1 gb
+        dir: /tmp/forst-cache
+      primary-dir: checkpoint-dir
+    type: forst
+env:
+  java:
+    opts: -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+ParallelRefProcEnabled -XX:+UseStringDeduplication --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+jobmanager:
+  rpc:
+    address: jobmanager
+  memory:
+    process:
+      size: 2048m
+taskmanager:
+  network:
+    memory:
+      max: 1024mb
+      fraction: 0.2
+      min: 128mb
+  numberOfTaskSlots: 4
+  memory:
+    process:
+      size: 2048m
+metrics:
+  reporter:
+    prom:
+      factory:
+        class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+      port: 9249-9250
+  reporters: prom
+  latency:
+    interval: 10s
+execution:
+  checkpointing:
+    aligned-checkpoint-timeout: 30s
+    savepoint-dir: file:///remote/savepoints
+    dir: file:///remote/checkpoints
+    mode: EXACTLY_ONCE
+    unaligned: true
+    interval: 30s
+    timeout: 10min
+    min-pause: 5s
+    max-concurrent-checkpoints: 1
+query:
+  server:
+    port: '6125'
+rest:
+  port: 8081
+  address: jobmanager

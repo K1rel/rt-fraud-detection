@@ -1,0 +1,17 @@
+kafka:
+  bootstrap_servers: "localhost:9092"
+  input_topic: "transactions"
+  alert_topic: "fraud_alerts"
+
+elasticsearch:
+  url: "http://localhost:9200"
+  index_alerts: "fraud-alerts-000001"
+
+flink:
+  checkpoint_interval_ms: 5000
+  state_backend: "forst"
+  parallelism: 2
+
+timestamps:
+  format: "ISO-8601"
+  timezone: "UTC"

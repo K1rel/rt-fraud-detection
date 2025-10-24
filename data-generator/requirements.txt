@@ -1,0 +1,4 @@
+confluent-kafka
+faker
+pydantic
+python-dateutil
