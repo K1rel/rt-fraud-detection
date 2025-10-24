@@ -47,7 +47,7 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
       - bootstrap.memory_lock=true
     ulimits:
       memlock:
@@ -79,8 +79,50 @@ services:
       interval: 20s
       timeout: 10s
       retries: 30
+  jobmanager:
+    image: apache/flink:2.0.0-java17
+    container_name: flink-jobmanager
+    command: jobmanager
+    environment:
+      - LOG4J_CONFIGURATION_FILE=/opt/flink/conf/log4j2.properties
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+      - "9249:9249"
+    volumes:
+      - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+      - ./flink/conf/log4j2.properties:/opt/flink/conf/log4j2.properties:ro
+      - flink-logs:/opt/flink/log
+      - flink-remote:/remote
+      - ./flink/lib/flink-metrics-prometheus-2.0.0.jar:/opt/flink/lib/flink-metrics-prometheus-2.0.0.jar:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:8081/overview >/dev/null" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  taskmanager:
+    image: apache/flink:2.0.0-java17
+    command: taskmanager
+    restart: unless-stopped
+    depends_on:
+      - jobmanager
+    environment:
+      - LOG4J_CONFIGURATION_FILE=/opt/flink/conf/log4j2.properties
+    volumes:
+      - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+      - ./flink/conf/log4j2.properties:/opt/flink/conf/log4j2.properties:ro
+      - flink-logs:/opt/flink/log
+      - flink-remote:/remote
+      - ./flink/lib/flink-metrics-prometheus-2.0.0.jar:/opt/flink/lib/flink-metrics-prometheus-2.0.0.jar:ro
 
 volumes:
  esdata: { }
+ flink-remote: {}
+ flink-logs: {}
+
+networks:
+ default:
+   name: fraud-detection-net
 
 
