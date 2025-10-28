@@ -1,0 +1,137 @@
+{
+  "version": "v1",
+  "features": [
+    {
+      "name": "V1",
+      "dtype": "float32"
+    },
+    {
+      "name": "V2",
+      "dtype": "float32"
+    },
+    {
+      "name": "V3",
+      "dtype": "float32"
+    },
+    {
+      "name": "V4",
+      "dtype": "float32"
+    },
+    {
+      "name": "V5",
+      "dtype": "float32"
+    },
+    {
+      "name": "V6",
+      "dtype": "float32"
+    },
+    {
+      "name": "V7",
+      "dtype": "float32"
+    },
+    {
+      "name": "V8",
+      "dtype": "float32"
+    },
+    {
+      "name": "V9",
+      "dtype": "float32"
+    },
+    {
+      "name": "V10",
+      "dtype": "float32"
+    },
+    {
+      "name": "V11",
+      "dtype": "float32"
+    },
+    {
+      "name": "V12",
+      "dtype": "float32"
+    },
+    {
+      "name": "V13",
+      "dtype": "float32"
+    },
+    {
+      "name": "V14",
+      "dtype": "float32"
+    },
+    {
+      "name": "V15",
+      "dtype": "float32"
+    },
+    {
+      "name": "V16",
+      "dtype": "float32"
+    },
+    {
+      "name": "V17",
+      "dtype": "float32"
+    },
+    {
+      "name": "V18",
+      "dtype": "float32"
+    },
+    {
+      "name": "V19",
+      "dtype": "float32"
+    },
+    {
+      "name": "V20",
+      "dtype": "float32"
+    },
+    {
+      "name": "V21",
+      "dtype": "float32"
+    },
+    {
+      "name": "V22",
+      "dtype": "float32"
+    },
+    {
+      "name": "V23",
+      "dtype": "float32"
+    },
+    {
+      "name": "V24",
+      "dtype": "float32"
+    },
+    {
+      "name": "V25",
+      "dtype": "float32"
+    },
+    {
+      "name": "V26",
+      "dtype": "float32"
+    },
+    {
+      "name": "V27",
+      "dtype": "float32"
+    },
+    {
+      "name": "V28",
+      "dtype": "float32"
+    },
+    {
+      "name": "Amount_z",
+      "dtype": "float32"
+    },
+    {
+      "name": "tod_sin",
+      "dtype": "float32"
+    },
+    {
+      "name": "tod_cos",
+      "dtype": "float32"
+    }
+  ],
+  "target": {
+    "name": "Class",
+    "dtype": "int64"
+  },
+  "notes": [
+    "Amount_z = (Amount - mean) / std (see artifacts/feature_params.json)",
+    "tod_* from Time % 86400"
+  ]
+}
