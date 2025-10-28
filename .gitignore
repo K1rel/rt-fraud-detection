@@ -3,6 +3,7 @@
 ```gitignore
 # Java/Maven
 target/
+build/
 *.iml
 *.class
 *.log
@@ -16,6 +17,8 @@ out/
 node_modules/
 dist/
 .cache/
+.vite/
+
 
 # Python
 __pycache__/
@@ -41,3 +44,28 @@ scripts/
 *.swp
 *.swo
 .vscode/
+
+
+# Raw data (keep folder, ignore files)
+ml-model/data/*
+!ml-model/data/.gitkeep
+!ml-model/data/README.md
+
+# Processed training arrays
+ml-model/processed/
+
+# Artifacts: ignore all by default…
+ml-model/artifacts/*
+
+!ml-model/artifacts/feature_params.json
+
+# Python cruft
+**/__pycache__/
+*.py[cod]
+**/.ipynb_checkpoints/
+
+# Models / big binaries
+*.onnx
+*.pkl
+*.ckpt
+
