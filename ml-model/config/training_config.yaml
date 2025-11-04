@@ -1,0 +1,14 @@
+seed: 42
+input_csv: "ml-model/data/creditcard.csv"
+use_time_feature: false
+use_smote: false
+test_size: 0.2
+cv_splits: 5
+scaler_amount_path: "ml-model/artifacts/amount_scaler.pkl"
+export_onnx: true
+onnx_opset: 15
+timing_samples: 10000
+threshold: null
+use_processed: True
+processed_dir: "ml-model/processed"
+artifacts_dir: "ml-model/artifacts"
