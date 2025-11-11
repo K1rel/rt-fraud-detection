@@ -19,8 +19,22 @@
         <flink.version>2.0.0</flink.version>
         <kafka.connector.version>4.0.0-2.0</kafka.connector.version>
         <es.connector.version>4.0.0-2.0</es.connector.version>
-        <onnxruntime.version>1.23.1</onnxruntime.version>
+        <onnxruntime.version>1.23.2</onnxruntime.version>
+
+        <jackson.version>2.17.3</jackson.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -43,7 +57,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
-            <artifactId>flink-connector-elasticsearch7</artifactId>
+            <artifactId>flink-connector-elasticsearch8</artifactId>
             <version>${es.connector.version}</version>
         </dependency>
 
@@ -84,6 +98,18 @@
             <artifactId>flink-test-utils</artifactId>
             <version>${flink.version}</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
         </dependency>
     </dependencies>
 
@@ -132,38 +158,7 @@
                 </executions>
             </plugin>
 
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.1</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals><goal>shade</goal></goals>
-                        <configuration>
-                            <shadedArtifactAttached>true</shadedArtifactAttached>
-                            <shadedClassifierName>shaded</shadedClassifierName>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.frauddetection.FraudDetectionJob</mainClass>
-                                </transformer>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
-                            </transformers>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+
 
             <!-- JUnit5 -->
             <plugin>
@@ -172,8 +167,25 @@
                 <version>3.2.5</version>
                 <configuration>
                     <useSystemClassLoader>false</useSystemClassLoader>
+                    <useModulePath>false</useModulePath>
                 </configuration>
             </plugin>
         </plugins>
+
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <includes>
+                    <include>**/*</include>
+                </includes>
+            </resource>
+        </resources>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>false</filtering>
+            </testResource>
+        </testResources>
     </build>
 </project>

@@ -39,7 +39,7 @@ flink/plugins/**/flink-metrics-*.jar
 
 
 
-scripts/
+/scripts/
 
 *.swp
 *.swo

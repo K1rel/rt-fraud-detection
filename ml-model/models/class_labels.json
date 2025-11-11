@@ -1,0 +1,8 @@
+{
+  "class_labels": [
+    0,
+    1
+  ],
+  "positive_label": 1,
+  "n_features": 31
+}
