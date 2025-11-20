@@ -1,0 +1,12 @@
+bootstrap_servers: "localhost:9092"
+topic: "transactions"
+dataset_csv: "ml-model/data/creditcard.csv"
+rate_per_sec: 20
+duration_sec: 60
+fraud_ratio: 0.02
+mode: "sample"
+transactional_id: ""
+batch_txn_size: 100
+log_every: 100
+seed: 42
+currency: "EUR"

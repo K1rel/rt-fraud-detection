@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "transaction_v1.json",
+  "title": "Transaction v1",
+  "type": "object",
+  "required": ["event_id", "timestamp", "account_id", "merchant_id", "amount", "currency", "features"],
+  "properties": {
+    "schema": { "type": "string", "const": "transaction_v1" },
+    "event_id": { "type": "string", "format": "uuid" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "account_id": { "type": "string" },
+    "merchant_id": { "type": "string" },
+    "amount": { "type": "number" },
+    "amount_minor": { "type":  "integer", "minimum": 0},
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "features": {
+      "type": "object",
+      "required": ["Amount"],
+      "properties": {
+        "Amount": { "type": "number" }
+      },
+      "additionalProperties": { "type": "number" }
+    },
+    "is_fraud_label": { "type": ["integer", "null"], "enum": [0, 1, null] },
+    "fraud_pattern": { "type": ["string", "null"] },
+    "event_time": {"type":  "string", "format": "date-time"},
+    "correlation_id": { "type":  "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}
