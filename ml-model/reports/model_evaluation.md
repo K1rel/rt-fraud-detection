@@ -2,7 +2,7 @@
 
 ```json
 {
-  "timestamp_utc": "2025-11-11T18:35:26Z",
+  "timestamp_utc": "2025-11-23T14:18:37Z",
   "chosen_model": "rf",
   "threshold": 0.03221476510067114,
   "test_metrics": {
@@ -80,8 +80,8 @@
     }
   },
   "timing_ms_per_row": {
-    "sklearn": 0.01148847129998103,
-    "onnx": 0.0030845356000099855
+    "sklearn": 0.012351150899939966,
+    "onnx": 0.00531318690000262
   },
   "thresholds": {
     "lr": 0.609746835443038,
