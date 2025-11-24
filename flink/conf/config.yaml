@@ -8,7 +8,7 @@ state:
       cache:
         size-based-limit: 1 gb
         dir: /tmp/forst-cache
-      primary-dir: checkpoint-dir
+      primary-dir: file:///remote/checkpoints
     type: forst
 env:
   java:

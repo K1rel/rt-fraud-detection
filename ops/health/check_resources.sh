@@ -2,7 +2,7 @@
 set -euo pipefail
 
 THRESHOLD_MB="${THRESHOLD_MB:-6000}"
-targets='^(zookeeper|kafka|elasticsearch|kibana|flink-jobmanager|rt-fraud-pipeline-taskmanager-1)$'
+targets='^(zookeeper|kafka|elasticsearch|kibana|flink-jobmanager|rt-fraud-detection-taskmanager-1)$'
 
 # Collect stats once
 mapfile -t lines < <(docker stats --no-stream --format '{{.Name}} {{.MemUsage}}')

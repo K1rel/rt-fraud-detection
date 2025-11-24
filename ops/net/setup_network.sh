@@ -2,7 +2,7 @@
 set -euo pipefail
 
 NET="${1:-fraud-detection-net}"
-containers=(zookeeper kafka elasticsearch kibana flink-jobmanager rt-fraud-pipeline-taskmanager-1)
+containers=(zookeeper kafka elasticsearch kibana flink-jobmanager rt-fraud-detection-taskmanager-1)
 
 if ! docker network inspect "$NET" >/dev/null 2>&1; then
   echo "Creating network: $NET"

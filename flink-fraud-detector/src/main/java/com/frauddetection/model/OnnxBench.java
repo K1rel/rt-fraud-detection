@@ -9,8 +9,8 @@ public final class OnnxBench {
         long N = (args.length > 1 ? Long.parseLong(args[1]) : 10000L);
 
         OnnxScorer tmp = ("path".equalsIgnoreCase(src) && args.length > 3)
-                ? OnnxScorer.fromPath(Path.of(args[2]), Path.of(args[3]))
-                : OnnxScorer.fromResource("/model/best_model.onnx");
+                ? OnnxFactories.fromPath(Path.of(args[2]), Path.of(args[3]))
+                : OnnxFactories.fromResource("/model/best_model.onnx");
 
         try (OnnxScorer scorer = tmp){
             int F = scorer.getFeatureCount();

@@ -93,7 +93,7 @@ services:
       - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
       - ./flink/conf/log4j2.properties:/opt/flink/conf/log4j2.properties:ro
       - flink-logs:/opt/flink/log
-      - flink-remote:/remote
+      - ./flink/remote:/remote
       - ./flink/lib/flink-metrics-prometheus-2.0.0.jar:/opt/flink/lib/flink-metrics-prometheus-2.0.0.jar:ro
     healthcheck:
       test: [ "CMD-SHELL", "curl -sf http://localhost:8081/overview >/dev/null" ]
@@ -113,12 +113,11 @@ services:
       - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
       - ./flink/conf/log4j2.properties:/opt/flink/conf/log4j2.properties:ro
       - flink-logs:/opt/flink/log
-      - flink-remote:/remote
+      - ./flink/remote:/remote
       - ./flink/lib/flink-metrics-prometheus-2.0.0.jar:/opt/flink/lib/flink-metrics-prometheus-2.0.0.jar:ro
 
 volumes:
  esdata: { }
- flink-remote: {}
  flink-logs: {}
 
 networks:

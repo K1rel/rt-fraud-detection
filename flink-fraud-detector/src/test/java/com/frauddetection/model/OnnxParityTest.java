@@ -39,7 +39,7 @@ public class OnnxParityTest {
                 p_py[i] = (float) Pnode.get(i).asDouble();
             }
 
-            try (OnnxScorer scorer = OnnxScorer.fromResource("/model/best_model.onnx")) {
+            try (OnnxScorer scorer = OnnxFactories.fromResource("/model/best_model.onnx")) {
                 float[] p_java = scorer.scoreBatch(X);
 
                 double maxAbs = 0.0, mae = 0.0;
