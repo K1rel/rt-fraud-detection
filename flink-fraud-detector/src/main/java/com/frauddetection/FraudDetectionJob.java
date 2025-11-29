@@ -2,6 +2,7 @@ package com.frauddetection;
 
 import com.frauddetection.model.Transaction;
 import com.frauddetection.serialization.TransactionDeserializationSchema;
+import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.configuration.ExternalizedCheckpointRetention;
 import org.apache.flink.connector.kafka.source.KafkaSource;
@@ -12,6 +13,10 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.util.Objects;
 
 
 public final class FraudDetectionJob{
@@ -58,12 +63,43 @@ public final class FraudDetectionJob{
                 .setBootstrapServers(bootstrapServers)
                 .setTopics(transactionsTopic)
                 .setGroupId(consumerGroup)
-                .setStartingOffsets(OffsetsInitializer.latest())
+                .setStartingOffsets(OffsetsInitializer.earliest())
                 .setValueOnlyDeserializer(new TransactionDeserializationSchema())
+                .setProperty("enable.auto.commit", "false")
                 .build();
 
+        WatermarkStrategy<Transaction> wmStrategy = WatermarkStrategy.<Transaction>forBoundedOutOfOrderness(Duration.ofSeconds(5))
+                .withTimestampAssigner(
+                        (tx, recordTs) -> {
+                            if (tx == null){
+                                return recordTs;
+                            }
+
+                            String s = tx.getEventTime();
+                            if(s == null || s.isBlank()){
+                                s = tx.getTimestamp();
+                            }
+                            if(s == null || s.isBlank()){
+                                return recordTs;
+                            }
+
+                            try{
+                                return Instant.parse(s).toEpochMilli();
+                            } catch (DateTimeParseException e){
+                                LOG.warn(
+                                        "Bad event_time/timestamp '{}', using record timestamp {}",
+                                        s, recordTs
+                                );
+                                return recordTs;
+                            }
+                        }
+                );
+
         DataStream<Transaction> transactions =
-                env.fromSource(kafkaSource, WatermarkStrategy.noWatermarks(), "transactions-source");
+                env.fromSource(kafkaSource, wmStrategy, "transactions-source")
+                        .filter(Objects::nonNull)
+                        .name("filter-valid-transactions")
+                        .uid("filter-valid-transactions");
 
         transactions.map(tx -> {
             LOG.info(
