@@ -8,7 +8,9 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import random
 from threading import Event
-from typing import Tuple, Iterator, Any, Generator, Iterable, Optional
+from typing import Tuple, Iterator, Any, Generator, Iterable, Optional, Dict
+
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -19,6 +21,7 @@ from kafka import KafkaProducer, errors as kerrors
 STOP = Event()
 ACCOUNT_POOL  = 50_000
 MERCHANT_POOL = 10_000
+FEATURE_PARAMS: Optional[Dict[str, Any]] = None
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -53,7 +56,7 @@ def jitter_features(row: pd.Series, feature_cols: list[str], scale: float = 0.02
 # Record object
 Record = tuple[bytes, dict[str, Any], list[tuple[str, bytes]]]
 
-def make_record(row: pd.Series, feature_cols: list[str], currency: str, fraud_pattern: Optional[str] = None, event_time: Optional[datetime] = None ) -> Record:
+def make_record(row: pd.Series, model_feature_names: list[str], currency: str, fraud_pattern: Optional[str] = None, event_time: Optional[datetime] = None ) -> Record:
     event_id = str(uuid.uuid4())
     correlation_id = str(uuid.uuid4())
     account_id = row.get("_account_id") or mk_id("C")
@@ -64,12 +67,7 @@ def make_record(row: pd.Series, feature_cols: list[str], currency: str, fraud_pa
     if not np.isfinite(amount):
         raise ValueError(f"Non-finite amount: {amount}")
 
-    feats:dict[str, float] = {}
-    for c in feature_cols:
-        v = float(row[c])
-        if not np.isfinite(v):
-            raise ValueError(f"Non-finite feature {c}={v!r}")
-        feats[c] = v
+    feats = build_model_features(row, model_feature_names)
 
     evt_iso = (event_time or datetime.now(timezone.utc)).isoformat(timespec="milliseconds").replace("+00:00","Z")
     payload: dict[str, Any] = {
@@ -136,7 +134,7 @@ def fraud_synth_factory(base_row: pd.Series, feature_cols: list[str], amt_p99: f
     else:
         return synth_feature_outlier(base_row, feature_cols)
 
-def iter_sampled(df: pd.DataFrame, feature_cols: list[str], fraud_ratio: float, seed: int, anchor: Optional[datetime], amt_p99: float, currency: str) -> Generator[Record, None, None]:
+def iter_sampled(df: pd.DataFrame, feature_cols: list[str], model_feature_names: list[str], fraud_ratio: float, seed: int, anchor: Optional[datetime], amt_p99: float, currency: str) -> Generator[Record, None, None]:
     rng = np.random.default_rng(seed)
     normals = df[df["Class"] == 0].sample(frac=1.0, random_state=seed).reset_index(drop=True)
     frauds = df[df["Class"] == 1].sample(frac=1.0, random_state=seed + 1).reset_index(drop=True)
@@ -159,10 +157,10 @@ def iter_sampled(df: pd.DataFrame, feature_cols: list[str], fraud_ratio: float, 
         if anchor is not None:
             tsec = float(row["Time"]) if "Time" in row else 0.0
             et = anchor + timedelta(seconds=tsec)
-        key, payload, headers = make_record(row, feature_cols, currency=currency, fraud_pattern=pattern, event_time=et)
+        key, payload, headers = make_record(row, model_feature_names, currency=currency, fraud_pattern=pattern, event_time=et)
         yield key, payload, headers
 
-def iter_replay(df: pd.DataFrame, feature_cols: list[str], anchor: Optional[datetime], currency: str) -> Generator[Record, None, None]:
+def iter_replay(df: pd.DataFrame, feature_cols: list[str], model_feature_names: list[str], anchor: Optional[datetime], currency: str) -> Generator[Record, None, None]:
     for i, row in df.iterrows():
         row = row.copy()
         row["_account_id"] = f"C-{i% ACCOUNT_POOL:06d}"
@@ -171,7 +169,7 @@ def iter_replay(df: pd.DataFrame, feature_cols: list[str], anchor: Optional[date
         if anchor is not None:
             tsec = float(row["Time"]) if "Time" in row else 0.0
             et = anchor + timedelta(seconds=tsec)
-        key, payload, headers = make_record(row, feature_cols, currency=currency, fraud_pattern=("replay_fraud" if row["Class"] == 1 else None), event_time=et)
+        key, payload, headers = make_record(row, model_feature_names, currency=currency, fraud_pattern=("replay_fraud" if row["Class"] == 1 else None), event_time=et)
         yield key, payload, headers
 
 def rate_limiter(rate_per_sec: float):
@@ -191,6 +189,42 @@ def rate_limiter(rate_per_sec: float):
 def on_sigint(sig, frame):
     STOP.set()
 
+def build_model_features(row: pd.Series, model_feature_names: list[str]) -> dict[str, float]:
+    if FEATURE_PARAMS is None:
+        raise RuntimeError("FEATURE_PARAMS not loaded")
+
+    params = FEATURE_PARAMS
+    amount_cfg = params["amount_scaler"]
+    mean = float(amount_cfg["mean"])
+    scale = float(amount_cfg["scale"])
+    period = float(params.get("period_sec", 86400.0))
+
+    amount = float(row["Amount"])
+    time_val = float(row["Time"]) if "Time" in row and not pd.isna(row["Time"]) else 0.0
+
+    amount_z = (amount - mean) / scale
+    tday = time_val % period
+    angle = 2.0 * np.pi * (tday / period)
+    tod_sin = float(np.sin(angle))
+    tod_cos = float(np.cos(angle))
+
+    feats: dict[str, float] = {}
+
+    for name in model_feature_names:
+        if name == "Amount_z":
+            feats[name] = float(amount_z)
+        elif name == "tod_sin":
+            feats[name] = tod_sin
+        elif name == "tod_cos":
+            feats[name] = tod_cos
+        else:
+            v = float(row[name])
+            if not np.isfinite(v):
+                raise ValueError(f"Non-finite feature {name}={v!r}")
+            feats[name] = v
+
+    return feats
+
 def build_producer(bootstrap: str):
     return KafkaProducer(
         bootstrap_servers=bootstrap,
@@ -204,6 +238,11 @@ def build_producer(bootstrap: str):
 
 def run():
     df, feature_cols = load_csv(ARGS.dataset_csv)
+    global FEATURE_PARAMS
+
+    FEATURE_PARAMS = json.loads(Path(ARGS.feature_params).read_text())
+    model_feature_names: list[str] = FEATURE_PARAMS["order"]
+
     print(f"[info] loaded {len(df)} rows; frauds={int((df['Class']==1).sum())}")
     anchor = None
     if "Time" in df.columns and len(df) > 0:
@@ -214,7 +253,7 @@ def run():
 
     amt_p99 = float(df.loc[df["Class"] == 0, "Amount"].quantile(0.99))
 
-    gen = iter_replay(df, feature_cols, anchor, ARGS.currency) if ARGS.mode == "replay" else iter_sampled(df, feature_cols, ARGS.fraud_ratio, ARGS.seed, anchor, amt_p99, ARGS.currency)
+    gen = iter_replay(df, feature_cols, model_feature_names, anchor, ARGS.currency) if ARGS.mode == "replay" else iter_sampled(df, feature_cols, model_feature_names, ARGS.fraud_ratio, ARGS.seed, anchor, amt_p99, ARGS.currency)
     rate = rate_limiter(ARGS.rate_per_sec)
     prod = build_producer(ARGS.bootstrap_servers)
     start = time.time()
@@ -260,6 +299,7 @@ def parse_args():
     p.add_argument("--log-every", dest="log_every", type=int)
     p.add_argument("--seed", type=int)
     p.add_argument("--currency")
+    p.add_argument("--feature-params", dest="feature_params")
     args = p.parse_args()
 
     cfg = {}
@@ -272,7 +312,7 @@ def parse_args():
         return cfg.get(k, default) if v is None else v
 
     return argparse.Namespace(
-        bootstrap_servers=pick("bootstrap_servers", "localhost:9092"),
+        bootstrap_servers=pick("bootstrap_servers", "localhost:29092"),
         topic=pick("topic", "transactions"),
         dataset_csv=pick("dataset_csv", "ml-model/data/creditcard.csv"),
         rate_per_sec=float(pick("rate_per_sec", 20)),
@@ -281,7 +321,8 @@ def parse_args():
         mode=pick("mode", "sample"),
         log_every=int(pick("log_every", 100)),
         seed=int(pick("seed", 42)),
-        currency=pick("currency", "EUR")
+        currency=pick("currency", "EUR"),
+        feature_params = pick("feature_params", "ml-model/artifacts/feature_params.json")
     )
 
 if __name__ == "__main__":

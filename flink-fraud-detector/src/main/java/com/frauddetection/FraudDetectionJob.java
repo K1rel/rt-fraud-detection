@@ -1,5 +1,7 @@
 package com.frauddetection;
 
+import com.frauddetection.functions.FraudDetectionFunction;
+import com.frauddetection.model.ScoredTransaction;
 import com.frauddetection.model.Transaction;
 import com.frauddetection.serialization.TransactionDeserializationSchema;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
@@ -102,17 +104,44 @@ public final class FraudDetectionJob{
                         .uid("filter-valid-transactions");
 
         transactions.map(tx -> {
-            LOG.info(
-                    "Received transaction eventId={} accountId={} amount={} schema={}",
+            if(LOG.isDebugEnabled()){
+                LOG.info(
+                        "Received transaction eventId={} accountId={} amount={} schema={}",
                         tx.getEventId(),
                         tx.getAccountId(),
                         tx.getAmount(),
                         tx.getSchema()
-                    );
+                );
+            }
+
             return tx;
         })
                 .name("log-transactions")
                 .uid("log-transactions");
+
+        DataStream<ScoredTransaction> scoredTransactions =
+                transactions
+                        .map(new FraudDetectionFunction())
+                        .name("scored-transactions")
+                        .uid("scored-transactions");
+
+        scoredTransactions
+                .map(st -> {
+                    if(LOG.isDebugEnabled()){
+                        LOG.info(
+                                "Scored transaction eventId={} label={} fraudScore={} modelVersion={}",
+                                st.getTransaction().getEventId(),
+                                st.getTransaction().getFraudLabel(),
+                                st.getFraudScore(),
+                                st.getModelVersion()
+                        );
+                    }
+
+                    return st;
+                })
+                        .name("log-scored-transactions")
+                        .uid("log-scored-transactions")
+                        .print();
 
         env.execute("FraudDetectionJob");
     }
