@@ -281,8 +281,13 @@ def run():
         except Exception as e:
             print(f"[error] send failed: {e}", file=sys.stderr)
 
-    prod.flush(timeout=10)
-    prod.close()
+    try:
+          prod.flush(timeout=30)
+    except kerrors.KafkaTimeoutError as e:
+       print(f"[warn] flush timeout after sending {sent} records: {e}", file=sys.stderr)
+    finally:
+      prod.close()
+
     dur = time.time() - start
     print(f"[done] sent={sent} in {dur:.2f}s (~{sent/max(dur,1e-6):.1f}/s)")
 
@@ -293,7 +298,8 @@ def parse_args():
     p.add_argument("--topic")
     p.add_argument("--dataset", dest="dataset_csv")
     p.add_argument("--rate", dest="rate_per_sec", type=float)
-    p.add_argument("--duration", dest="duration_sec", type=int)
+    p.add_argument("--duration", dest="duration_sec", type=int)       # soft-fail: some messages may still be in-flight, but we don't care for local testing
+
     p.add_argument("--fraud-ratio", dest="fraud_ratio", type=float)
     p.add_argument("--mode", choices=["replay", "sample"])
     p.add_argument("--log-every", dest="log_every", type=int)

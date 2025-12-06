@@ -1,6 +1,6 @@
 package com.frauddetection.serialization;
 
-import com.frauddetection.model.Transaction;
+import com.frauddetection.domain.transaction.Transaction;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.DeserializationFeature;
@@ -8,7 +8,6 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMap
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 public class TransactionDeserializationSchema implements DeserializationSchema<Transaction> {

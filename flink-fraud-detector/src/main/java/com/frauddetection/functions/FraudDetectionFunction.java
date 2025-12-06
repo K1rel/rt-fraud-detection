@@ -3,8 +3,8 @@ package com.frauddetection.functions;
 import com.frauddetection.ml.FeatureVectorizer;
 import com.frauddetection.ml.ModelLoader;
 import com.frauddetection.model.OnnxScorer;
-import com.frauddetection.model.ScoredTransaction;
-import com.frauddetection.model.Transaction;
+import com.frauddetection.domain.transaction.ScoredTransaction;
+import com.frauddetection.domain.transaction.Transaction;
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.functions.RuntimeContext;
@@ -54,7 +54,14 @@ public class FraudDetectionFunction extends RichMapFunction<Transaction, ScoredT
         this.scorer = ModelLoader.loadDefaultScorer();
         LOG.info("Loaded ONNX model; featureCount={}", scorer.getFeatureCount());
 
-        RuntimeContext ctx = getRuntimeContext();
+        final RuntimeContext ctx;
+        try {
+            ctx = getRuntimeContext();
+        } catch (IllegalStateException e) {
+            // Happens when used outside a Flink runtime (plain unit tests)
+            LOG.warn("RuntimeContext not initialized - metrics disabled (likely unit test).");
+            return; // skip metrics registration, keep scoring alive
+        }
         if(ctx != null){
             MetricGroup group = ctx.getMetricGroup().addGroup("fraud_model");
 

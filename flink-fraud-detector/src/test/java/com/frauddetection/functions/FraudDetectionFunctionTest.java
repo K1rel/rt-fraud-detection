@@ -1,7 +1,7 @@
 package com.frauddetection.functions;
 
-import com.frauddetection.model.ScoredTransaction;
-import com.frauddetection.model.Transaction;
+import com.frauddetection.domain.transaction.ScoredTransaction;
+import com.frauddetection.domain.transaction.Transaction;
 import org.apache.flink.api.common.functions.DefaultOpenContext;
 import org.junit.jupiter.api.Test;
 

@@ -1,6 +1,6 @@
 package com.frauddetection.ml;
 
-import com.frauddetection.model.Transaction;
+import com.frauddetection.domain.transaction.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

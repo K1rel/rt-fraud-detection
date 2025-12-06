@@ -1,4 +1,4 @@
-package com.frauddetection.model;
+package com.frauddetection.domain.transaction;
 
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonAlias;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonIgnoreProperties;

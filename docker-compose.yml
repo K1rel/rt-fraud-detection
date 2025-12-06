@@ -95,6 +95,11 @@ services:
       - ONNX_MODEL_SRC=resource
       - ONNX_MODEL_RESOURCE=/model/best_model.onnx
       - MODEL_VERSION=best_model.onnx
+      - RULE_MAX_TX_PER_MINUTE=1          # flag freq on almost every account hit
+      - RULE_FREQUENCY_WINDOW_MS=60000
+      - RULE_HIGH_AMOUNT_THRESHOLD=10     # anything >10 EUR is "high"
+      - RULE_VELOCITY_MIN_GAP_MS=60000    # disable velocity (needs < 60s)
+      - RULE_MODEL_SCORE_THRESHOLD=0.0    # ANY score -> HIGH_MODEL_SCORE
     restart: unless-stopped
     ports:
       - "8081:8081"
@@ -119,14 +124,14 @@ services:
       - jobmanager
     environment:
       - LOG4J_CONFIGURATION_FILE=/opt/flink/conf/log4j2.properties
-        - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-        - TRANSACTIONS_TOPIC=transactions
-        - KAFKA_CONSUMER_GROUP=fraud-detector
-        - FLINK_CHECKPOINT_INTERVAL_MS=60000
-        - FLINK_DEFAULT_PARALLELISM=4
-        - ONNX_MODEL_SRC=resource
-        - ONNX_MODEL_RESOURCE=/model/best_model.onnx
-        - MODEL_VERSION=best_model.onnx
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - TRANSACTIONS_TOPIC=transactions
+      - KAFKA_CONSUMER_GROUP=fraud-detector
+      - FLINK_CHECKPOINT_INTERVAL_MS=60000
+      - FLINK_DEFAULT_PARALLELISM=4
+      - ONNX_MODEL_SRC=resource
+      - ONNX_MODEL_RESOURCE=/model/best_model.onnx
+      - MODEL_VERSION=best_model.onnx
     volumes:
       - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
       - ./flink/conf/log4j2.properties:/opt/flink/conf/log4j2.properties:ro

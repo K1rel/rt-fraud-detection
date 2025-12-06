@@ -69,3 +69,9 @@ ml-model/artifacts/*
 *.pkl
 *.ckpt
 
+flink/remote/
+flink-logs/
+**/checkpoints/
+*.jar
+
+

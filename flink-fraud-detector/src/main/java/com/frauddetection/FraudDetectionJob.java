@@ -1,11 +1,15 @@
 package com.frauddetection;
 
+import com.frauddetection.config.RuleConfig;
+import com.frauddetection.domain.alert.FraudAlert;
 import com.frauddetection.functions.FraudDetectionFunction;
-import com.frauddetection.model.ScoredTransaction;
-import com.frauddetection.model.Transaction;
+import com.frauddetection.domain.transaction.ScoredTransaction;
+import com.frauddetection.domain.transaction.Transaction;
+import com.frauddetection.functions.RuleBasedDetectionFunction;
 import com.frauddetection.serialization.TransactionDeserializationSchema;
-import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.configuration.ExternalizedCheckpointRetention;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
@@ -140,9 +144,37 @@ public final class FraudDetectionJob{
                     return st;
                 })
                         .name("log-scored-transactions")
-                        .uid("log-scored-transactions")
-                        .print();
+                        .uid("log-scored-transactions");
 
+        RuleConfig ruleConfig = RuleConfig.fromEnv();
+        LOG.info("Using rule config: {}", ruleConfig);
+
+        DataStream<FraudAlert> alerts =
+                scoredTransactions
+                        .keyBy((KeySelector<ScoredTransaction, String>) st ->
+                                st.getTransaction().getAccountId())
+                                .process(new RuleBasedDetectionFunction(ruleConfig))
+                                .name("rule-based-detection")
+                                .uid("rule-based-detection");
+
+        alerts
+                .map(new MapFunction<FraudAlert, FraudAlert>() {
+                    @Override
+                    public FraudAlert map(FraudAlert alert){
+                        LOG.info(
+                                "ALERT eventId={} accountId={} amount={} score={} reasons={}",
+                                alert.getEventId(),
+                                alert.getAccountId(),
+                                alert.getAmount(),
+                                alert.getFraudScore(),
+                                alert.getReasons()
+                        );
+                        return alert;
+                    }
+                })
+                        .name("log-alerts")
+                        .uid("log-alerts")
+                        .print();
         env.execute("FraudDetectionJob");
     }
 
