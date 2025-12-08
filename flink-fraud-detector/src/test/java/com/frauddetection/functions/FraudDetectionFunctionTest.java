@@ -17,7 +17,7 @@ class FraudDetectionFunctionTest {
 
     @Test
     void scoringProducesReasonableScoreAndLatency() throws Exception{
-        FraudDetectionFunction fn = new FraudDetectionFunction();
+        FraudDetectionFunction fn = new FraudDetectionFunction(0.05);
         fn.open(DefaultOpenContext.INSTANCE);
         try{
             Transaction tx = sampleTransaction();

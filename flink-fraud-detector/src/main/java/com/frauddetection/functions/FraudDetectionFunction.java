@@ -21,7 +21,11 @@ public class FraudDetectionFunction extends RichMapFunction<Transaction, ScoredT
 
     private static final Logger LOG = LoggerFactory.getLogger(FraudDetectionFunction.class);
 
-    private static final double DEFAULT_FRAUD_THRESHOLD = 0.5;
+    private final double mlFraudThreshold;
+
+    public FraudDetectionFunction(double mlFraudThreshold) {
+        this.mlFraudThreshold = mlFraudThreshold;
+    }
 
     private transient OnnxScorer scorer;
     private transient Counter inferenceCounter;
@@ -106,7 +110,7 @@ public class FraudDetectionFunction extends RichMapFunction<Transaction, ScoredT
             }
 
             double scoreDouble = (double) score;
-            boolean isFraud = scoreDouble >= DEFAULT_FRAUD_THRESHOLD;
+            boolean isFraud = scoreDouble >= mlFraudThreshold;
             double latencyMs = latencyNs / 1_000_000.0;
 
             return new ScoredTransaction(

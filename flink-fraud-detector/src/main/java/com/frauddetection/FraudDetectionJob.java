@@ -5,10 +5,10 @@ import com.frauddetection.domain.alert.FraudAlert;
 import com.frauddetection.functions.FraudDetectionFunction;
 import com.frauddetection.domain.transaction.ScoredTransaction;
 import com.frauddetection.domain.transaction.Transaction;
+import com.frauddetection.functions.HighConfidenceAlertFilter;
 import com.frauddetection.functions.RuleBasedDetectionFunction;
 import com.frauddetection.serialization.TransactionDeserializationSchema;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
-import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.configuration.ExternalizedCheckpointRetention;
 import org.apache.flink.connector.kafka.source.KafkaSource;
@@ -43,9 +43,13 @@ public final class FraudDetectionJob{
         final int parallelism =
                 parseIntEnv("FLINK_DEFAULT_PARALLELISM");
 
+        final double mlFraudThreshold = parseDoubleEnv("ML_FRAUD_THRESHOLD");
+
+        final double alertScoreThreshold = parseDoubleEnv("ALERT_SCORE_THRESHOLD");
+
         LOG.info(
-                "Starting FraudDetectionJob with bootstrapServers={}, topic={}, group={}, " + "parallelism={}, checkpointIntervalMs={}",
-                bootstrapServers, transactionsTopic, consumerGroup, parallelism, checkpointIntervalMs
+                "Starting FraudDetectionJob with bootstrapServers={}, topic={}, group={}, parallelism={}, checkpointIntervalMs={}, alertScoreThreshold={}",
+                bootstrapServers, transactionsTopic, consumerGroup, parallelism, checkpointIntervalMs, alertScoreThreshold
         );
 
         // --- StreamExecutionEnv ---
@@ -125,7 +129,7 @@ public final class FraudDetectionJob{
 
         DataStream<ScoredTransaction> scoredTransactions =
                 transactions
-                        .map(new FraudDetectionFunction())
+                        .map(new FraudDetectionFunction(mlFraudThreshold))
                         .name("scored-transactions")
                         .uid("scored-transactions");
 
@@ -155,26 +159,40 @@ public final class FraudDetectionJob{
                                 st.getTransaction().getAccountId())
                                 .process(new RuleBasedDetectionFunction(ruleConfig))
                                 .name("rule-based-detection")
-                                .uid("rule-based-detection");
+                                .uid("rule-based-detection")
+                        .map(a -> {
+                            LOG.info("PRE_FILTER alert score={} reasons={}", a.getFraudScore(), a.getReasons());
+                            return a;
+                        }).name("debug-pre-filter")
+                                .disableChaining();
 
-        alerts
-                .map(new MapFunction<FraudAlert, FraudAlert>() {
-                    @Override
-                    public FraudAlert map(FraudAlert alert){
+        DataStream<FraudAlert> highConfidenceAlerts =
+                alerts
+                        .filter(new HighConfidenceAlertFilter(alertScoreThreshold))
+                        .name("filter-high-confidence-alerts")
+                        .uid("filter-high-confidence-alerts")
+                        .disableChaining();
+
+        highConfidenceAlerts
+                .map(alert -> {
+
                         LOG.info(
-                                "ALERT eventId={} accountId={} amount={} score={} reasons={}",
+                                "ALERT alertId={} eventId={} accountId={} amount={} score={} severity={} method={} reasons={}",
+                                alert.getAlertId(),
                                 alert.getEventId(),
                                 alert.getAccountId(),
                                 alert.getAmount(),
                                 alert.getFraudScore(),
+                                alert.getSeverity(),
+                                alert.getDetectionMethod(),
                                 alert.getReasons()
                         );
                         return alert;
-                    }
-                })
-                        .name("log-alerts")
-                        .uid("log-alerts")
-                        .print();
+                    })
+                .name("log-alerts")
+                .uid("log-alerts")
+                .print();
+
         env.execute("FraudDetectionJob");
     }
 
@@ -191,6 +209,14 @@ public final class FraudDetectionJob{
             return Long.parseLong(requireEnv(key));
         } catch (NumberFormatException e) {
             throw new IllegalStateException("Env " + key + " must be a long", e);
+        }
+    }
+
+    private static double parseDoubleEnv(String key) {
+        try {
+            return Double.parseDouble(requireEnv(key));
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("Env " + key + " must be a double", e);
         }
     }
 
