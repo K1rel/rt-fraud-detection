@@ -1,5 +1,8 @@
 package com.frauddetection;
 
+import co.elastic.clients.elasticsearch.core.bulk.BulkOperationVariant;
+import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.frauddetection.config.RuleConfig;
 import com.frauddetection.domain.alert.FraudAlert;
 import com.frauddetection.functions.FraudDetectionFunction;
@@ -7,26 +10,39 @@ import com.frauddetection.domain.transaction.ScoredTransaction;
 import com.frauddetection.domain.transaction.Transaction;
 import com.frauddetection.functions.HighConfidenceAlertFilter;
 import com.frauddetection.functions.RuleBasedDetectionFunction;
+import com.frauddetection.serialization.FraudAlertSerializationSchema;
 import com.frauddetection.serialization.TransactionDeserializationSchema;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.configuration.ExternalizedCheckpointRetention;
+import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.base.sink.writer.ElementConverter;
+import org.apache.flink.connector.elasticsearch.sink.Elasticsearch8AsyncSink;
+import org.apache.flink.connector.elasticsearch.sink.Elasticsearch8AsyncSinkBuilder;
+import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.http.HttpHost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 
 public final class FraudDetectionJob{
     private static final Logger LOG = LoggerFactory.getLogger(FraudDetectionJob.class);
+    private static final ObjectMapper ALERT_MAPPER = new ObjectMapper();
 
 
     private FraudDetectionJob(){
@@ -37,6 +53,7 @@ public final class FraudDetectionJob{
         final String bootstrapServers  = requireEnv("KAFKA_BOOTSTRAP_SERVERS");
         final String transactionsTopic = requireEnv("TRANSACTIONS_TOPIC");
         final String consumerGroup     = requireEnv("KAFKA_CONSUMER_GROUP");
+        final String alertsTopic = requireEnv("ALERTS_TOPIC");
 
         final long checkpointIntervalMs =
                 parseLongEnv("FLINK_CHECKPOINT_INTERVAL_MS");
@@ -173,7 +190,7 @@ public final class FraudDetectionJob{
                         .uid("filter-high-confidence-alerts")
                         .disableChaining();
 
-        highConfidenceAlerts
+       DataStream<FraudAlert> loggedAlerts = highConfidenceAlerts
                 .map(alert -> {
 
                         LOG.info(
@@ -190,10 +207,89 @@ public final class FraudDetectionJob{
                         return alert;
                     })
                 .name("log-alerts")
-                .uid("log-alerts")
-                .print();
+                .uid("log-alerts");
+
+        KafkaSink<FraudAlert> kafkaAlertSink =
+                KafkaSink.<FraudAlert>builder()
+                                .setBootstrapServers(bootstrapServers)
+                                        .setRecordSerializer(
+                                                KafkaRecordSerializationSchema.builder()
+                                                        .setTopic(alertsTopic)
+                                                        .setValueSerializationSchema(new FraudAlertSerializationSchema())
+                                                        .build()
+                                        )
+                                                .setDeliveryGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
+                                                .setTransactionalIdPrefix("fraud-alerts-" + consumerGroup)
+                                                .build();
+
+
+        loggedAlerts
+                .sinkTo(kafkaAlertSink)
+                .name("kafka-fraud-alerts-sink")
+                .uid("kafka-fraud-alerts-sink");
+
+        String esHost = envOrDefault("ELASTICSEARCH_HOST", "elasticsearch");
+        int esPort = parseIntEnv("ELASTICSEARCH_PORT");
+        String esScheme = envOrDefault("ELASTICSEARCH_SCHEME", "http");
+        String esIndexPrefix = envOrDefault("ELASTICSEARCH_ALERT_INDEX_PREFIX", "fraud-alerts");
+
+        ElementConverter<FraudAlert, BulkOperationVariant> esConverter =
+
+                (alert, ctx) -> {
+
+                        if (alert == null) {
+                            return null;
+                        }
+
+                        String index = resolveAlertIndex(esIndexPrefix,  alert);
+
+                        return new IndexOperation.Builder<FraudAlert>()
+                                .index(index)
+                                .id(alert.getAlertId())
+                                .document(alert)
+                                .build();
+
+
+                };
+
+        Elasticsearch8AsyncSink<FraudAlert> esSink =
+                Elasticsearch8AsyncSinkBuilder.<FraudAlert>builder()
+                                .setHosts(new HttpHost(esHost, esPort, esScheme))
+                                .setElementConverter(esConverter)
+                                .setMaxBatchSize(500)
+                                .setMaxBufferedRequests(1000)
+                                .setMaxTimeInBufferMS(1000)
+                                .setMaxInFlightRequests(2)
+                                .build();
+
+        loggedAlerts
+            .sinkTo(esSink)
+            .name("elasticsearch-fraud-alerts-sink")
+            .uid("elasticsearch-fraud-alerts-sink");
 
         env.execute("FraudDetectionJob");
+    }
+
+    private static String resolveAlertIndex(String prefix, FraudAlert alert){
+        String ts = alert.getCreatedAt();
+        LocalDate date;
+        try{
+            if(ts != null && !ts.isBlank()){
+                date = Instant.parse(ts).atOffset(ZoneOffset.UTC).toLocalDate();
+            } else {
+                date = LocalDate.now(ZoneOffset.UTC);
+            }
+        } catch (DateTimeParseException e){
+            date = LocalDate.now(ZoneOffset.UTC);
+        }
+
+        return String.format(
+                "%s-%04d-%02d-%02d",
+                prefix,
+                date.getYear(),
+                date.getMonthValue(),
+                date.getDayOfMonth()
+        );
     }
 
     private static String requireEnv(String key) {
@@ -218,6 +314,14 @@ public final class FraudDetectionJob{
         } catch (NumberFormatException e) {
             throw new IllegalStateException("Env " + key + " must be a double", e);
         }
+    }
+
+    private static String envOrDefault(String key,  String defaultValue) {
+        String v = System.getenv(key);
+        if (v == null || v.isBlank()) {
+            return defaultValue;
+        }
+        return v;
     }
 
     private static int parseIntEnv(String key) {

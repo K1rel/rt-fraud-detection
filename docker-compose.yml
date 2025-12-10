@@ -36,6 +36,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
 
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      KAFKA_TRANSACTION_MAX_TIMEOUT_MS: "3600000"
     healthcheck:
       test: ["CMD-SHELL", "bash -lc 'kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1'"]
       interval: 10s
@@ -95,13 +97,26 @@ services:
       - ONNX_MODEL_SRC=resource
       - ONNX_MODEL_RESOURCE=/model/best_model.onnx
       - MODEL_VERSION=best_model.onnx
-      - RULE_MAX_TX_PER_MINUTE=5
+#      - RULE_MAX_TX_PER_MINUTE=5
+#      - RULE_FREQUENCY_WINDOW_MS=60000
+#      - RULE_HIGH_AMOUNT_THRESHOLD=5000
+#      - RULE_VELOCITY_MIN_GAP_MS=5000
+#      - RULE_MODEL_SCORE_THRESHOLD=0.8
+#      - ML_FRAUD_THRESHOLD=0.5
+#      - ALERT_SCORE_THRESHOLD=0.8
+      - RULE_MAX_TX_PER_MINUTE=1          # flag freq on almost every account hit
       - RULE_FREQUENCY_WINDOW_MS=60000
-      - RULE_HIGH_AMOUNT_THRESHOLD=5000
-      - RULE_VELOCITY_MIN_GAP_MS=5000
-      - RULE_MODEL_SCORE_THRESHOLD=0.8
-      - ML_FRAUD_THRESHOLD=0.5
-      - ALERT_SCORE_THRESHOLD=0.8
+      - RULE_HIGH_AMOUNT_THRESHOLD=10     # anything >10 EUR is "high"
+      - RULE_VELOCITY_MIN_GAP_MS=60000    # disable velocity (needs < 60s)
+      - RULE_MODEL_SCORE_THRESHOLD=0.1    # ANY score -> HIGH_MODEL_SCORE
+      - ML_FRAUD_THRESHOLD=0.05
+      - ALERT_SCORE_THRESHOLD=0.08
+
+      - ALERTS_TOPIC=fraud_alerts
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_SCHEME=HTTP
+      - ELASTICSEARCH_ALERT_INDEX_PREFIX=fraud-alerts
     restart: unless-stopped
     ports:
       - "8081:8081"
