@@ -155,6 +155,20 @@ services:
       - flink-logs:/opt/flink/log
       - ./flink/remote:/remote
       - ./flink/lib/flink-metrics-prometheus-2.0.0.jar:/opt/flink/lib/flink-metrics-prometheus-2.0.0.jar:ro
+  api:
+    build:
+      context: ./api
+    container_name: api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - ELASTICSEARCH_NODE=http://elasticsearch:9200
+    ports:
+      - "3001:3001"
+    depends_on:
+      - elasticsearch
+
 
 volumes:
  esdata: { }
