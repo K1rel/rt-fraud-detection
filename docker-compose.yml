@@ -164,6 +164,8 @@ services:
       - NODE_ENV=production
       - PORT=3001
       - ELASTICSEARCH_NODE=http://elasticsearch:9200
+      - ELASTICSEARCH_ALERT_INDEX_PREFIX=fraud-alerts
+
     ports:
       - "3001:3001"
     depends_on:

@@ -2,6 +2,7 @@ import express, {Application} from 'express';
 import cors from "cors";
 import morgan from 'morgan';
 import {Client} from '@elastic/elasticsearch';
+import alertsRouterFactory from './routes/alerts';
 
 const PORT: number = Number(process.env.PORT);
 const ES_NODE: string = process.env.ELASTICSEARCH_NODE || "";
@@ -46,6 +47,10 @@ app.get('/health', async (req, res) => {
         timestamp: new Date().toISOString()
     });
 });
+
+//alerts api
+
+app.use('/api/alerts', alertsRouterFactory(esClient));
 
 app.use((req, res) => {
     res.status(404).json({
