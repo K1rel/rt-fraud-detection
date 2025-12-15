@@ -3,6 +3,7 @@ import cors from "cors";
 import morgan from 'morgan';
 import {Client} from '@elastic/elasticsearch';
 import alertsRouterFactory from './routes/alerts';
+import statsRouterFactory from "./routes/stats";
 
 const PORT: number = Number(process.env.PORT);
 const ES_NODE: string = process.env.ELASTICSEARCH_NODE || "";
@@ -51,6 +52,9 @@ app.get('/health', async (req, res) => {
 //alerts api
 
 app.use('/api/alerts', alertsRouterFactory(esClient));
+
+//stats api
+app.use("/api/stats", statsRouterFactory(esClient));
 
 app.use((req, res) => {
     res.status(404).json({

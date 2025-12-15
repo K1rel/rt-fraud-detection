@@ -166,6 +166,9 @@ services:
       - ELASTICSEARCH_NODE=http://elasticsearch:9200
       - ELASTICSEARCH_ALERT_INDEX_PREFIX=fraud-alerts
 
+      - STATS_CACHE_TTL_MS=10000
+      - STATS_ANON_SALT=022dcf711a9e2bee0efb248348711adb
+      - CACHE_MAX_ENTRIES=200
     ports:
       - "3001:3001"
     depends_on:
