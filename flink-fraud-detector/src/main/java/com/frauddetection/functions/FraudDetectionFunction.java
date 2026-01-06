@@ -37,6 +37,9 @@ public class FraudDetectionFunction extends RichMapFunction<Transaction, ScoredT
     private long totalLatencyNanos = 0L;
     private long totalInferences = 0L;
 
+    private transient java.util.List<String> featureOrder;
+
+
     @Override
     public void open(OpenContext parameters) throws Exception {
         super.open(parameters);
@@ -57,6 +60,17 @@ public class FraudDetectionFunction extends RichMapFunction<Transaction, ScoredT
 //        LOG.info("Initializing FraudDetectionFunction with modelVersion={}", modelVersion);
         this.scorer = ModelLoader.loadDefaultScorer();
         LOG.info("Loaded ONNX model; featureCount={}", scorer.getFeatureCount());
+
+
+
+        this.featureOrder = scorer.getFeatureNames();
+
+        if (featureOrder == null || featureOrder.size() != scorer.getFeatureCount()) {
+            throw new IllegalStateException("featureOrder missing or wrong size: " +
+            (featureOrder == null ? "null" : featureOrder.size()) + " vs " + scorer.getFeatureCount());
+        }
+
+
 
         final RuntimeContext ctx;
         try {
@@ -82,6 +96,7 @@ public class FraudDetectionFunction extends RichMapFunction<Transaction, ScoredT
             });
 
             LOG.info("FraudDetection function metrics registered.");
+
         } else {
             LOG.warn("RuntimeContext is null - metrics disabled (ikely unit test).");
         }
@@ -95,10 +110,17 @@ public class FraudDetectionFunction extends RichMapFunction<Transaction, ScoredT
         }
 
         try{
-            float[] features = FeatureVectorizer.toFeatureVector(tx, scorer.getFeatureCount());
+            var ordered = FeatureVectorizer.toOrderedFeatureMap(tx, featureOrder);
+            tx.setFeatures(ordered);
+
+            float[] features = FeatureVectorizer.toFeatureVector(ordered, featureOrder);
+
+
 
             long t0 = System.nanoTime();
             float score = scorer.score(features);
+
+
             long t1 = System.nanoTime();
 
             long latencyNs = t1 - t0;

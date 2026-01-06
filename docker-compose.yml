@@ -97,20 +97,20 @@ services:
       - ONNX_MODEL_SRC=resource
       - ONNX_MODEL_RESOURCE=/model/best_model.onnx
       - MODEL_VERSION=best_model.onnx
-#      - RULE_MAX_TX_PER_MINUTE=5
-#      - RULE_FREQUENCY_WINDOW_MS=60000
-#      - RULE_HIGH_AMOUNT_THRESHOLD=5000
-#      - RULE_VELOCITY_MIN_GAP_MS=5000
-#      - RULE_MODEL_SCORE_THRESHOLD=0.8
-#      - ML_FRAUD_THRESHOLD=0.5
-#      - ALERT_SCORE_THRESHOLD=0.8
-      - RULE_MAX_TX_PER_MINUTE=1          # flag freq on almost every account hit
+      - RULE_MAX_TX_PER_MINUTE=5
       - RULE_FREQUENCY_WINDOW_MS=60000
-      - RULE_HIGH_AMOUNT_THRESHOLD=10     # anything >10 EUR is "high"
-      - RULE_VELOCITY_MIN_GAP_MS=60000    # disable velocity (needs < 60s)
-      - RULE_MODEL_SCORE_THRESHOLD=0.1    # ANY score -> HIGH_MODEL_SCORE
-      - ML_FRAUD_THRESHOLD=0.05
-      - ALERT_SCORE_THRESHOLD=0.08
+      - RULE_HIGH_AMOUNT_THRESHOLD=5000
+      - RULE_VELOCITY_MIN_GAP_MS=5000
+      - RULE_MODEL_SCORE_THRESHOLD=0.8
+      - ML_FRAUD_THRESHOLD=0.5
+      - ALERT_SCORE_THRESHOLD=0.8
+#      - RULE_MAX_TX_PER_MINUTE=1          # flag freq on almost every account hit
+#      - RULE_FREQUENCY_WINDOW_MS=60000
+#      - RULE_HIGH_AMOUNT_THRESHOLD=10     # anything >10 EUR is "high"
+#      - RULE_VELOCITY_MIN_GAP_MS=60000    # disable velocity (needs < 60s)
+#      - RULE_MODEL_SCORE_THRESHOLD=0.1    # ANY score -> HIGH_MODEL_SCORE
+#      - ML_FRAUD_THRESHOLD=0.05
+#      - ALERT_SCORE_THRESHOLD=0.08
 
       - ALERTS_TOPIC=fraud_alerts
       - ELASTICSEARCH_HOST=elasticsearch
@@ -169,10 +169,15 @@ services:
       - STATS_CACHE_TTL_MS=10000
       - STATS_ANON_SALT=022dcf711a9e2bee0efb248348711adb
       - CACHE_MAX_ENTRIES=200
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - ALERTS_TOPIC=fraud_alerts
+      - KAFKA_CONSUMER_GROUP=api-alert-streamer
+      - WS_MAX_CLIENTS=50
     ports:
       - "3001:3001"
     depends_on:
       - elasticsearch
+      - kafka
 
 
 volumes:

@@ -1,9 +1,13 @@
 import express, {Application} from 'express';
 import cors from "cors";
 import morgan from 'morgan';
+import http from "http";
 import {Client} from '@elastic/elasticsearch';
 import alertsRouterFactory from './routes/alerts';
 import statsRouterFactory from "./routes/stats";
+import { Server as SocketIOServer } from "socket.io";
+import {startRealtime, type StopRealtime } from "./realtime/startRealtime";
+
 
 const PORT: number = Number(process.env.PORT);
 const ES_NODE: string = process.env.ELASTICSEARCH_NODE || "";
@@ -77,7 +81,62 @@ const errorHandler: express.ErrorRequestHandler = (err, req, res, _next) => {
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-    console.log(`[api-service] Listening on port ${PORT}`);
-    console.log(`[api-service] Elasticsearch endpoint: ${ES_NODE}`);
-});
+async function main(): Promise<void>{
+    const httpServer = http.createServer(app);
+
+    const io = new SocketIOServer(httpServer, {
+        cors: {
+            origin: corsOptions.origin as any,
+            methods: ["GET", "POST"],
+            credentials: true,
+        },
+        transports: ["websocket"],
+        connectionStateRecovery: {
+            maxDisconnectionDuration: 2 * 60 * 1000,
+            skipMiddlewares: false,
+        },
+    });
+
+    let stopRealtime: StopRealtime | null = null;
+
+    const shutdown = async (signal: string) => {
+        console.log(`[api-service] shutdown signal=${signal}`);
+
+        try {
+            if(stopRealtime) await stopRealtime();
+        } catch (e: any){
+            console.error("[api-service] stopRealtime failed:", e?.message || e);
+        }
+
+        try{
+            io.close();
+        } catch {}
+
+        httpServer.close(() => {
+            console.log("[api-service] HTTP server closed");
+            process.exit(0);
+        });
+
+        setTimeout(() => process.exit(1), 5000).unref();
+    };
+
+    process.on("SIGINT", () => void shutdown("SIGINT"));
+    process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
+    httpServer.listen(PORT, async () => {
+        console.log(`[api-service] Listening on port ${PORT}`);
+        console.log(`[api-service] Elasticsearch endpoint: ${ES_NODE}`);
+        console.log(`[api-service] WebSocket endpoint: ws://localhost:${PORT}`);
+
+        try{
+            stopRealtime = await startRealtime(io);
+            console.log("[api-service] realtime started");
+        } catch (e: any){
+            console.error("[api-service] realtime failed to start:", e?.message || e);
+            process.exit(1);
+        }
+    });
+}
+
+void main();
+

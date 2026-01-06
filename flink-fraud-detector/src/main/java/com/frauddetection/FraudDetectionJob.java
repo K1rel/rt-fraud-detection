@@ -218,8 +218,7 @@ public final class FraudDetectionJob{
                                                         .setValueSerializationSchema(new FraudAlertSerializationSchema())
                                                         .build()
                                         )
-                                                .setDeliveryGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
-                                                .setTransactionalIdPrefix("fraud-alerts-" + consumerGroup)
+                                                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                                                 .build();
 
 

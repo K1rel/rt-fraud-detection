@@ -11,12 +11,14 @@ final class Sidecar {
     final List<String> classLabels;
     final String positiveLabel;
     final int nFeatures;
+    final List<String> featureNames;
 
 
-    private Sidecar(List<String> classLabels, String positiveLabel, int nFeatures) {
+    private Sidecar(List<String> classLabels, String positiveLabel, int nFeatures, List<String> featureNames) {
         this.classLabels = classLabels;
         this.positiveLabel = positiveLabel;
         this.nFeatures = nFeatures;
+        this.featureNames = featureNames;
     }
 
     static Sidecar parse(byte[] json) throws IOException {
@@ -35,7 +37,22 @@ final class Sidecar {
         JsonNode nf = root.get("n_features");
         int nfeat = (nf != null && nf.isInt()) ? nf.asInt() : -1;
 
-        return new Sidecar(labels, pos, nfeat);
+        JsonNode fn = root.get("feature_names");
+        List<String> names = new ArrayList<>();
+        if (fn != null && fn.isArray()) {
+            for (JsonNode e : fn) names.add(e.asText());
+        }
+
+        if (nfeat <= 0 && !names.isEmpty()) nfeat = names.size();
+
+        if (!names.isEmpty() && names.size() != nfeat) {
+            throw new IllegalArgumentException("feature_names size (" + names.size() + ") != n_features (" + nfeat + ")");
+        }
+        if (names.isEmpty()) {
+            throw new IllegalArgumentException("Missing feature_names in sidecar JSON (required to avoid wrong feature order)");
+        }
+
+        return new Sidecar(labels, pos, nfeat, names);
     }
 
     int positiveIndex() {

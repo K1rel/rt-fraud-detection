@@ -3,15 +3,16 @@ package com.frauddetection.model;
 import ai.onnxruntime.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class OnnxScorer implements AutoCloseable{
     private final OrtEnvironment env;
@@ -20,18 +21,17 @@ public final class OnnxScorer implements AutoCloseable{
     private final String outputName;
     private final int featureCount;
     private final int positiveIndex;
+    private final List<String> featureNames;
 
-    public OnnxScorer(OrtEnvironment env, OrtSession session, String inputName, String outputName, int featureCount, int positiveIndex) {
+    public OnnxScorer(OrtEnvironment env, OrtSession session, String inputName, String outputName, int featureCount, int positiveIndex, List<String> featureNames) {
         this.env = env;
         this.session = session;
         this.inputName = inputName;
         this.outputName = outputName;
         this.featureCount = featureCount;
         this.positiveIndex = positiveIndex;
+        this.featureNames = featureNames;
     }
-
-    // --- FACTORIES ---
-
 
     // ----- API -----
 
@@ -60,17 +60,22 @@ public final class OnnxScorer implements AutoCloseable{
 
                 if(val instanceof float[][] out2d){
                     int cols = out2d[0].length;
+
                     int col = (cols >= 2) ? positiveIndex : 0;
+
                     float[] p = new float[out2d.length];
                     for(int i = 0; i < out2d.length; i++) p[i] = out2d[i][col];
                     return p;
                 } else if (val instanceof float[] out1d) {
+
                     return out1d.clone();
                 } else {
                     var fb = t.getFloatBuffer();
                     fb.rewind();
                     float[] out = new float[fb.remaining()];
+
                     fb.get(out);
+
                     return out;
                 }
             }
@@ -85,5 +90,7 @@ public final class OnnxScorer implements AutoCloseable{
 
     // ---- HELPERS -----
 
-
+    public List<String> getFeatureNames() {
+        return featureNames;
+    }
 }

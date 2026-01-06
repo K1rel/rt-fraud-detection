@@ -59,7 +59,7 @@ public class RuleBasedDetectionFunction extends KeyedProcessFunction<String, Sco
 
         EnumSet<AlertReason> reasons = EnumSet.noneOf(AlertReason.class);
 
-        if(scored.isFraudPrediction() || scored.getFraudScore() >= config.getModelScoreThreshold()){
+        if(scored.getFraudScore() >= config.getModelScoreThreshold()){
             reasons.add(AlertReason.HIGH_MODEL_SCORE);
         }
 

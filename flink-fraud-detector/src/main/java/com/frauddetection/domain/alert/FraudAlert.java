@@ -6,10 +6,7 @@ import com.frauddetection.domain.transaction.Transaction;
 
 import java.io.Serializable;
 import java.time.Instant;
-import java.util.EnumSet;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class FraudAlert implements Serializable {
@@ -36,6 +33,11 @@ public class FraudAlert implements Serializable {
     private Set<AlertReason> reasons;
 
     private AlertSeverity severity;
+    private java.util.Map<String, Double> features;
+    private java.util.Map<String, Double> featureContributions;
+    private String modelVersion;
+    private String scoredAt;
+    private Double inferenceMs;
 
     private String createdAt;
 
@@ -71,22 +73,32 @@ public class FraudAlert implements Serializable {
         AlertDetectionMethod detectionMethod = deriveDetectionMethod(reasons);
         AlertSeverity severity = deriveSeverity(score, reasons);
         String alertId = UUID.randomUUID().toString();
+        var feats = tx.getFeatures();
 
 
-        return new FraudAlert(
-                alertId,
-                tx.getEventId(),
-                accountId,
-                cardId,
-                tx.getAmount(),
-                tx.getCurrency(),
-                score,
-                scored.isFraudPrediction(),
-                detectionMethod,
-                EnumSet.copyOf(reasons),
-                severity,
-                nowIso
+        FraudAlert a = new FraudAlert(
+        alertId,
+        tx.getEventId(),
+        accountId,
+        cardId,
+        tx.getAmount(),
+        tx.getCurrency(),
+        score,
+        scored.isFraudPrediction(),
+        detectionMethod,
+        EnumSet.copyOf(reasons),
+        severity,
+        nowIso
         );
+
+        a.setFeatures(tx.getFeatures());
+        a.setFeatureContributions(null);
+        a.setModelVersion(scored.getModelVersion());
+        a.setScoredAt(scored.getScoredAt());
+        a.setInferenceMs(scored.getInferenceLatencyMs());
+
+        return a;
+
     }
 
     private static AlertDetectionMethod deriveDetectionMethod(Set<AlertReason> reasons) {
@@ -102,18 +114,40 @@ public class FraudAlert implements Serializable {
         }
     }
 
-    private static AlertSeverity deriveSeverity(double score, Set<AlertReason> reasons) {
-        if(score >= 0.98){
-            return AlertSeverity.CRITICAL;
-        }
-        if (score >= 0.90){
-            return AlertSeverity.HIGH;
-        }
-        if(score >= 0.80){
-            return AlertSeverity.MEDIUM;
-        }
+    private static final double S_CRITICAL = 0.90;
+    private static final double S_HIGH     = 0.70;
+    private static final double S_MEDIUM   = 0.40;
 
+    private static AlertSeverity fromScore(double score) {
+        if (score >= S_CRITICAL) return AlertSeverity.CRITICAL;
+        if (score >= S_HIGH)     return AlertSeverity.HIGH;
+        if (score >= S_MEDIUM)   return AlertSeverity.MEDIUM;
         return AlertSeverity.LOW;
+    }
+
+    private static AlertSeverity fromReasons(boolean hasModel, int ruleCount) {
+        if (ruleCount >= 3) return AlertSeverity.CRITICAL;
+        if (ruleCount >= 2 || (hasModel && ruleCount >= 1)) return AlertSeverity.HIGH;
+        if (ruleCount >= 1 || hasModel) return AlertSeverity.MEDIUM;
+        return AlertSeverity.LOW;
+    }
+
+    private static AlertSeverity maxSeverity(AlertSeverity a, AlertSeverity b) {
+        return a.ordinal() >= b.ordinal() ? a : b;
+    }
+
+    private static AlertSeverity deriveSeverity(double score, Set<AlertReason> reasons) {
+        boolean hasModel = reasons.contains(AlertReason.HIGH_MODEL_SCORE);
+
+        int ruleCount = 0;
+        if (reasons.contains(AlertReason.HIGH_TX_AMOUNT)) ruleCount++;
+        if (reasons.contains(AlertReason.HIGH_TX_FREQUENCY)) ruleCount++;
+        if (reasons.contains(AlertReason.HIGH_VELOCITY)) ruleCount++;
+
+        AlertSeverity sScore = fromScore(score);
+        AlertSeverity sRules = fromReasons(hasModel, ruleCount);
+
+        return maxSeverity(sScore, sRules);
     }
 
     public String getAlertId() {
@@ -210,6 +244,46 @@ public class FraudAlert implements Serializable {
 
     public void setCreatedAt(String createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Map<String, Double> getFeatures() {
+        return features;
+    }
+
+    public void setFeatures(Map<String, Double> features) {
+        this.features = features;
+    }
+
+    public Map<String, Double> getFeatureContributions() {
+        return featureContributions;
+    }
+
+    public void setFeatureContributions(Map<String, Double> featureContributions) {
+        this.featureContributions = featureContributions;
+    }
+
+    public String getModelVersion() {
+        return modelVersion;
+    }
+
+    public void setModelVersion(String modelVersion) {
+        this.modelVersion = modelVersion;
+    }
+
+    public String getScoredAt() {
+        return scoredAt;
+    }
+
+    public void setScoredAt(String scoredAt) {
+        this.scoredAt = scoredAt;
+    }
+
+    public Double getInferenceMs() {
+        return inferenceMs;
+    }
+
+    public void setInferenceMs(Double inferenceMs) {
+        this.inferenceMs = inferenceMs;
     }
 
     @Override

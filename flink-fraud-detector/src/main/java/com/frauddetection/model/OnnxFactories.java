@@ -88,7 +88,7 @@ public final class OnnxFactories {
         if(positiveIndex < 0)
             throw new IllegalStateException("Positive label missing in sidecar.");
 
-        return new OnnxScorer(env, session, inName, probOutName, featureCount, positiveIndex);
+        return new OnnxScorer(env, session, inName, probOutName, featureCount, positiveIndex, sidecar.featureNames);
     }
 
     private static int deduceFeatureCount(long[] shape) {
