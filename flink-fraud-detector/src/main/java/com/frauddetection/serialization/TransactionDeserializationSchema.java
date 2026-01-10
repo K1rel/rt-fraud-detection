@@ -17,6 +17,7 @@ public class TransactionDeserializationSchema implements DeserializationSchema<T
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
+
     @Override
     public Transaction deserialize(byte[] message){
         if (message == null || message.length == 0){

@@ -5,14 +5,48 @@ import { buildStatsAggBody, buildTrendsAggBody, unwrapEsResponse } from "../es/s
 import { ALERT_INDEX_PATTERN } from "../es/alertsQuery";
 import { createHash } from "crypto";
 
-
 function toInt(value: unknown, def: number): number {
     const n = Number(value);
-    return Number.isFinite(n) ?  Math.trunc(n) : def;
+    return Number.isFinite(n) ? Math.trunc(n) : def;
 }
 
 function sha256Short(input: string): string {
     return createHash("sha256").update(input).digest("hex").slice(0, 12);
+}
+
+type TrendsRange = "1h" | "6h" | "24h" | "7d";
+
+function parseTrendsRange(raw: unknown): TrendsRange {
+    const s = String(raw ?? "").trim().toLowerCase();
+    if (s === "1h" || s === "6h" || s === "24h" || s === "7d") return s;
+    return "24h";
+}
+
+function rangeToMs(r: TrendsRange): number {
+    switch (r) {
+        case "1h":
+            return 1 * 60 * 60 * 1000;
+        case "6h":
+            return 6 * 60 * 60 * 1000;
+        case "24h":
+            return 24 * 60 * 60 * 1000;
+        case "7d":
+            return 7 * 24 * 60 * 60 * 1000;
+    }
+}
+
+function rangeToBucketInterval(r: TrendsRange): string {
+    // keep bucket count modest on a laptop
+    switch (r) {
+        case "1h":
+            return "1m";
+        case "6h":
+            return "5m";
+        case "24h":
+            return "1h";
+        case "7d":
+            return "6h";
+    }
 }
 
 export default function createStatsRouter(esClient: Client): Router {
@@ -20,15 +54,14 @@ export default function createStatsRouter(esClient: Client): Router {
 
     const cacheTtlMs = toInt(process.env.STATS_CACHE_TTL_MS, 10_000);
     const saltRaw = process.env.STATS_ANON_SALT;
-    if(!saltRaw) throw new Error("Missing STATS_ANON_SALT");
+    if (!saltRaw) throw new Error("Missing STATS_ANON_SALT");
     const anonSalt = saltRaw.trim();
 
-
-    router.get("/", cacheJson(cacheTtlMs), async(req, res, next) => {
+    router.get("/", cacheJson(cacheTtlMs), async (req, res, next) => {
         const started = Date.now();
 
-        try{
-            const body = buildStatsAggBody({ topCardsSize: 10});
+        try {
+            const body = buildStatsAggBody({ topCardsSize: 10 });
 
             const raw = await esClient.search({
                 index: ALERT_INDEX_PATTERN,
@@ -36,7 +69,7 @@ export default function createStatsRouter(esClient: Client): Router {
                 request_cache: true,
                 allow_no_indices: true,
                 ignore_unavailable: true,
-                filter_path: ["took", "aggregations"]
+                filter_path: ["took", "aggregations"],
             } as any);
 
             const result: any = unwrapEsResponse(raw);
@@ -60,7 +93,7 @@ export default function createStatsRouter(esClient: Client): Router {
                 count: b.doc_count ?? 0,
             }));
 
-            const topCards =  (aggs.top_cards?.buckets ?? []).map((b: any) => ({
+            const topCards = (aggs.top_cards?.buckets ?? []).map((b: any) => ({
                 card: sha256Short(`${anonSalt}:${String(b.key)}`),
                 count: b.doc_count ?? 0,
             }));
@@ -88,15 +121,22 @@ export default function createStatsRouter(esClient: Client): Router {
         }
     });
 
-
-    // GET /api/stats/trends
+    // GET /api/stats/trends?range=1h|6h|24h|7d
     router.get("/trends", cacheJson(cacheTtlMs), async (req, res, next) => {
         const started = Date.now();
 
-        try{
+        try {
+            const range = parseTrendsRange(req.query.range);
+
             const end = new Date();
-            const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
-            const body = buildTrendsAggBody({ startIso: start.toISOString(), endIso: end.toISOString(), histogramInterval: 0.1, });
+            const start = new Date(end.getTime() - rangeToMs(range));
+
+            const body = buildTrendsAggBody({
+                startIso: start.toISOString(),
+                endIso: end.toISOString(),
+                histogramInterval: 0.1,
+                timeBucketInterval: rangeToBucketInterval(range),
+            });
 
             const raw = await esClient.search({
                 index: ALERT_INDEX_PATTERN,
@@ -122,6 +162,7 @@ export default function createStatsRouter(esClient: Client): Router {
             }));
 
             return res.json({
+                range,
                 perHour,
                 scoreHistogram,
                 timing: {
@@ -129,7 +170,7 @@ export default function createStatsRouter(esClient: Client): Router {
                     totalMs: Date.now() - started,
                 },
             });
-        } catch (err){
+        } catch (err) {
             next(err);
         }
     });

@@ -56,7 +56,7 @@ export function useStats(opts?: { refreshMs?: number }) {
         try {
             const [statsRes, trendsRes] = await Promise.all([
                 api.get<StatsResponse>("/api/stats", { signal: ctrl.signal }),
-                api.get<TrendsResponse>("/api/stats/trends", { signal: ctrl.signal }),
+                api.get<TrendsResponse>("/api/stats/trends", {params: {range: "24h"},  signal: ctrl.signal }),
             ]);
 
             setState({
@@ -174,7 +174,6 @@ export function useStats(opts?: { refreshMs?: number }) {
         const dayTrendPct =
             avgPerDayWeek > 0 ? ((day - avgPerDayWeek) / avgPerDayWeek) * 100 : null;
 
-        const lastTwo = perHour.slice(-2);
         const { prev: prevHourCount, curr: currHourCount } = lastTwoValidCounts(perHour);
         const hourTrendPct = pctChange(currHourCount, prevHourCount);
 
@@ -219,3 +218,7 @@ export function useStats(opts?: { refreshMs?: number }) {
         refreshMs,
     };
 }
+
+
+export type UseStatsResult = ReturnType<typeof useStats>;
+

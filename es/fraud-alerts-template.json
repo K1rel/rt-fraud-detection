@@ -1,6 +1,6 @@
 {
-  "index_patterns": ["fraud-alerts*"],
-  "priority": 500,
+  "index_patterns": ["fraud-alerts-*"],
+  "priority": 999,
   "template": {
     "settings": {
       "index.number_of_shards": 1,
@@ -9,18 +9,55 @@
     "mappings": {
       "dynamic": "false",
       "properties": {
-        "@timestamp":        { "type": "date" },
-        "ingest_ts":         { "type": "date" },
-        "alert_id":          { "type": "keyword" },
-        "transaction_id":    { "type": "keyword" },
-        "account_id":        { "type": "keyword" },
-        "amount":            { "type": "double" },
-        "currency":          { "type": "keyword" },
-        "score":             { "type": "float" },
-        "label":             { "type": "keyword" },
-        "reason":            { "type": "keyword" },
-        "model_version":     { "type": "keyword" },
-        "features":          { "type": "object", "enabled": false }
+        "alertId": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+        "eventId": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+        "accountId": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+        "cardId": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+
+        "createdAt": { "type": "date" },
+        "eventTime":  { "type": "date" },
+        "scoredAt":   { "type": "date" },
+
+        "amount":   { "type": "double" },
+        "currency": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 32 } }
+        },
+
+        "fraudScore":      { "type": "double" },
+        "fraudPrediction": { "type": "boolean" },
+
+        "detectionMethod": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 64 } }
+        },
+        "severity": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 64 } }
+        },
+
+        "modelVersion": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+        "inferenceMs": { "type": "double" },
+
+        "reasons": { "type": "keyword" },
+
+        "features": { "type": "object", "enabled": false },
+        "featureContributions": { "type": "object", "enabled": false }
       }
     }
   }

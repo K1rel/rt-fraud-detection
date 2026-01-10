@@ -16,6 +16,8 @@ public class FraudAlert implements Serializable {
 
     private String eventId;
 
+    private String eventTime;
+
     private String accountId;
 
     private String cardId;
@@ -65,7 +67,9 @@ public class FraudAlert implements Serializable {
             long createdAtMillis
     ){
         Transaction tx = scored.getTransaction();
-        String nowIso = Instant.ofEpochMilli(createdAtMillis).toString();
+        String createdAtIso = Instant.ofEpochMilli(createdAtMillis).toString();
+        String eventIso = tx.getEventTime();
+
         String accountId = tx.getAccountId();
         String cardId = accountId;
         double score = scored.getFraudScore();
@@ -73,8 +77,6 @@ public class FraudAlert implements Serializable {
         AlertDetectionMethod detectionMethod = deriveDetectionMethod(reasons);
         AlertSeverity severity = deriveSeverity(score, reasons);
         String alertId = UUID.randomUUID().toString();
-        var feats = tx.getFeatures();
-
 
         FraudAlert a = new FraudAlert(
         alertId,
@@ -88,7 +90,7 @@ public class FraudAlert implements Serializable {
         detectionMethod,
         EnumSet.copyOf(reasons),
         severity,
-        nowIso
+        createdAtIso
         );
 
         a.setFeatures(tx.getFeatures());
@@ -96,6 +98,7 @@ public class FraudAlert implements Serializable {
         a.setModelVersion(scored.getModelVersion());
         a.setScoredAt(scored.getScoredAt());
         a.setInferenceMs(scored.getInferenceLatencyMs());
+        a.setEventTime(eventIso);
 
         return a;
 
@@ -284,6 +287,14 @@ public class FraudAlert implements Serializable {
 
     public void setInferenceMs(Double inferenceMs) {
         this.inferenceMs = inferenceMs;
+    }
+
+    public String getEventTime() {
+        return eventTime;
+    }
+
+    public void setEventTime(String eventTime) {
+        this.eventTime = eventTime;
     }
 
     @Override
