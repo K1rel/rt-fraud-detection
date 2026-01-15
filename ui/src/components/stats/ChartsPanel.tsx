@@ -48,7 +48,7 @@ export function ChartsPanel({
                     <div>
                         <CardTitle className="text-base">Trends & Visualizations</CardTitle>
                         <div className="text-xs text-muted-foreground mt-1">
-                            Range affects time-series + histogram • Zoom/pan via brush •{" "}
+                            Range affects time-series + histogram •{" "}
                             {updatedAt ? (
                                 <>
                                     updated: <span className="font-mono">{updatedAt}</span>
@@ -94,7 +94,7 @@ export function ChartsPanel({
                 <div className="rounded-xl border p-3">
                     <div className="flex items-center justify-between gap-3 pb-2">
                         <div className="text-sm font-medium">Alerts over time</div>
-                        <div className="text-xs text-muted-foreground">Area line • spike markers • brush zoom</div>
+                        <div className="text-xs text-muted-foreground">Area line • spike markers</div>
                     </div>
                     <AlertsOverTimeChart range={range} perHour={trends?.perHour ?? []} height={320} loading={loading} />
                 </div>

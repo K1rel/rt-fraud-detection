@@ -1,7 +1,6 @@
 import {
     Area,
     AreaChart,
-    Brush,
     CartesianGrid,
     ReferenceLine,
     ResponsiveContainer,
@@ -69,15 +68,22 @@ export function AlertsOverTimeChart({
             const ts = Date.parse(p.hour);
             return {
                 ts: Number.isFinite(ts) ? ts : 0,
-                count: typeof p.count === "number" && Number.isFinite(p.count) ? p.count : 0,
-                avgFraudScore: typeof p.avgFraudScore === "number" && Number.isFinite(p.avgFraudScore) ? p.avgFraudScore : null,
+                count:
+                    typeof p.count === "number" && Number.isFinite(p.count) ? p.count : 0,
+                avgFraudScore:
+                    typeof p.avgFraudScore === "number" && Number.isFinite(p.avgFraudScore)
+                        ? p.avgFraudScore
+                        : null,
             };
         })
         .filter((p) => p.ts > 0)
         .sort((a, b) => a.ts - b.ts);
 
     const counts = data.map((d) => d.count).filter((x) => Number.isFinite(x));
-    const threshold = Math.max(1, Math.round(quantile([...counts].sort((a, b) => a - b), 0.9)));
+    const threshold = Math.max(
+        1,
+        Math.round(quantile([...counts].sort((a, b) => a - b), 0.9))
+    );
 
     const yMax = counts.length ? Math.max(...counts) : 1;
 
@@ -86,7 +92,11 @@ export function AlertsOverTimeChart({
     }
 
     if (!data.length) {
-        return <div className="h-[320px] grid place-items-center text-sm text-muted-foreground">No data</div>;
+        return (
+            <div className="h-[320px] grid place-items-center text-sm text-muted-foreground">
+                No data
+            </div>
+        );
     }
 
     return (
@@ -108,7 +118,7 @@ export function AlertsOverTimeChart({
                         width={36}
                     />
                     <Tooltip
-                        formatter={(value: any, name: any, props: any) => {
+                        formatter={(value: any, name: any) => {
                             if (name === "count") return [String(value), "alerts"];
                             return [String(value), name];
                         }}
@@ -134,13 +144,6 @@ export function AlertsOverTimeChart({
                         dot={(p) => <SpikeDot {...p} threshold={threshold} />}
                         activeDot={{ r: 4 }}
                         isAnimationActive={false}
-                    />
-
-                    <Brush
-                        dataKey="ts"
-                        height={26}
-                        travellerWidth={10}
-                        tickFormatter={(v) => tickUtc(Number(v), range)}
                     />
                 </AreaChart>
             </ResponsiveContainer>

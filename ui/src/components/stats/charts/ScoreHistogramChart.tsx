@@ -19,6 +19,7 @@ function clamp01(x: number): number {
     return Math.max(0, Math.min(1, x));
 }
 
+
 export function ScoreHistogramChart({
                                         buckets,
                                         height,
@@ -56,16 +57,26 @@ export function ScoreHistogramChart({
     return (
         <div style={{ height }}>
             <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={2} height={36} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} width={34} />
+                <BarChart
+                    data={data}
+                    margin={{ top: 8, right: 12, left: 12, bottom: 28 }}
+                    barCategoryGap={24}
+                >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                        dataKey="label"
+                        interval={2}
+                        height={36}
+                        tickMargin={8}
+                        tick={{ fontSize: 11 }}
+                    />
+                    <YAxis allowDecimals={false} width={40} />
                     <Tooltip
-                        formatter={(value: any) => [String(value), "alerts"]}
+                        formatter={(v: any) => [Number(v ?? 0), "count"]}
                         labelFormatter={(label) => `score bucket: ${label}`}
                         contentStyle={{ fontSize: 12 }}
                     />
-                    <Bar dataKey="count" fill="hsl(var(--primary))" isAnimationActive={false} />
+                    <Bar dataKey="count" radius={[8, 8, 0, 0]} fill="hsl(var(--foreground))" isAnimationActive={false} />
                 </BarChart>
             </ResponsiveContainer>
         </div>

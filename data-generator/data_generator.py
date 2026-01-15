@@ -206,11 +206,39 @@ def _row_time_sec(row: pd.Series) -> float:
     return 0.0
 
 
+def _norm_probs(p_rules: float, p_ml: float, p_both: float) -> tuple[float, float, float]:
+    pr = float(p_rules or 0.0)
+    pm = float(p_ml or 0.0)
+    pb = float(p_both or 0.0)
+    pr = max(pr, 0.0)
+    pm = max(pm, 0.0)
+    pb = max(pb, 0.0)
+    s = pr + pm + pb
+    if s <= 0:
+        return 0.34, 0.33, 0.33
+    return pr / s, pm / s, pb / s
+
+
+def _choose_scenario(mix: str, rng: np.random.Generator, p_rules: float, p_ml: float, p_both: float) -> str:
+    m = (mix or "balanced").strip().lower()
+    if m in ("rules", "ml", "both"):
+        return m
+
+    # balanced/custom -> sample by probs
+    pr, pm, pb = _norm_probs(p_rules, p_ml, p_both)
+    r = float(rng.random())
+    if r < pr:
+        return "rules"
+    if r < pr + pm:
+        return "ml"
+    return "both"
+
+
 def iter_sampled(
         df: pd.DataFrame,
         feature_cols: list[str],
         model_feature_names: list[str],
-        fraud_ratio: float,
+        fraud_ratio: float,  # kept for compatibility, not used when mix != legacy
         seed: int,
         anchor: Optional[datetime],
         amt_p99: float,
@@ -219,35 +247,97 @@ def iter_sampled(
         event_time_mode: str,
         event_time_days: float,
         fixed_event_time: Optional[datetime],
+        account_pool: int,
+        merchant_pool: int,
+        mix: str,
+        p_rules: float,
+        p_ml: float,
+        p_both: float,
+        hot_accounts: int,
+        hot_ratio: float,
 ) -> Generator[Record, None, None]:
     rng = np.random.default_rng(seed)
     end = datetime.now(timezone.utc)
 
+    # pools (defensive)
+    account_pool = int(account_pool or 0)
+    merchant_pool = int(merchant_pool or 0)
+    if account_pool <= 0:
+        account_pool = ACCOUNT_POOL
+    if merchant_pool <= 0:
+        merchant_pool = MERCHANT_POOL
+
     normals = df[df["Class"] == 0].sample(frac=1.0, random_state=seed).reset_index(drop=True)
     frauds = df[df["Class"] == 1].sample(frac=1.0, random_state=seed + 1).reset_index(drop=True)
 
+    if len(normals) == 0:
+        raise RuntimeError("Dataset has no Class=0 rows (needed for rules scenario).")
+
+    # hot account pool for frequency/velocity triggers
+    hot_n = int(max(0, min(int(hot_accounts or 0), account_pool)))
+    hot_ids: list[str] = []
+    hot_set: set[str] = set()
+    if hot_n > 0:
+        picks = rng.choice(account_pool, size=hot_n, replace=False)
+        hot_ids = [f"C-{int(i):06d}" for i in picks]
+        hot_set = set(hot_ids)
+
+    hot_seq: dict[str, int] = {}
+
     ni, fi = 0, 0
     while True:
-        is_fraud = rng.random() < fraud_ratio
-        if is_fraud:
-            if fi >= len(frauds):
-                base = normals.iloc[ni % len(normals)]
-                row, pattern = fraud_synth_factory(base, feature_cols, amt_p99)
-            else:
-                row = frauds.iloc[fi].copy()
-                fi += 1
-                pattern = "replay_fraud"
-        else:
+        scenario = _choose_scenario(mix, rng, p_rules, p_ml, p_both)
+
+        # pick row by scenario
+        if scenario == "rules":
             row = normals.iloc[ni % len(normals)].copy()
             ni += 1
-            pattern = None
+            row["Class"] = 0
+            pattern = "mix_rules"
+        else:
+            # scenario in ("ml", "both") => fraud row
+            if len(frauds) == 0:
+                raise RuntimeError("Dataset has no Class=1 rows (needed for ml/both scenarios).")
 
-        row["_account_id"] = f"C-{(ni + fi) % ACCOUNT_POOL:06d}"
-        row["_merchant_id"] = f"M-{(ni * 7 + fi * 3) % MERCHANT_POOL:05d}"
+            # always replay fraud rows (wrap around) instead of switching to synth
+            row = frauds.iloc[fi % len(frauds)].copy()
+            fi += 1
+            base_pat = "replay_fraud"
 
+            row["Class"] = 1
+            pattern = f"mix_{scenario}:{base_pat}"
+
+
+    # account selection
+        acct: str
+        if scenario in ("rules", "both"):
+            if hot_ids and float(rng.random()) < float(hot_ratio or 0.0):
+                acct = hot_ids[int(rng.integers(0, len(hot_ids)))]
+            else:
+                acct = f"C-{int(rng.integers(0, account_pool)):06d}"
+        else:
+            # ml: avoid hot accounts (reduces freq/velocity triggers)
+            for _ in range(5):
+                acct = f"C-{int(rng.integers(0, account_pool)):06d}"
+                if acct not in hot_set:
+                    break
+
+        merch = f"M-{int(rng.integers(0, merchant_pool)):05d}"
+
+        row["_account_id"] = acct
+        row["_merchant_id"] = merch
+
+        # amount shaping
+        if scenario in ("rules", "both"):
+            # above typical thresholds (works whether threshold is 200, 1500, etc.)
+            row["Amount"] = float(max(float(row.get("Amount", 0.0) or 0.0), 1600.0))
+        else:
+            # ml: keep amount low to avoid HIGH_TX_AMOUNT rules
+            row["Amount"] = float(rng.uniform(10.0, 50.0))
+
+        # event_time selection (existing logic)
         et: Optional[datetime] = fixed_event_time
 
-        # Backfill modes (only if fixed_event_time not set)
         if et is None and event_time_days > 0:
             mode = (event_time_mode or "dataset").strip().lower()
             if mode in ("random", "stretch"):
@@ -261,15 +351,19 @@ def iter_sampled(
                     rng=rng,
                 )
             else:
-                # dataset mode: keep anchor behavior
                 if anchor is not None:
                     tsec = _row_time_sec(row)
                     et = anchor + timedelta(seconds=tsec)
         elif et is None:
-            # Old behavior
-            if anchor is not None:
-                tsec = _row_time_sec(row)
-                et = anchor + timedelta(seconds=tsec)
+            et = end
+
+        # timing shaping (only if not fixed by user)
+        if fixed_event_time is None and scenario in ("rules", "both") and acct in hot_set:
+            # cluster events for same hot accounts tightly
+            seq = hot_seq.get(acct, 0) + 1
+            hot_seq[acct] = seq
+            base = et or end
+            et = base - timedelta(milliseconds=min(seq, 2000) * 200)
 
         key, payload, headers = make_record(
             row,
@@ -292,14 +386,23 @@ def iter_replay(
         event_time_days: float,
         fixed_event_time: Optional[datetime],
         seed: int,
+        account_pool: int,
+        merchant_pool: int,
 ) -> Generator[Record, None, None]:
     rng = np.random.default_rng(seed)
     end = datetime.now(timezone.utc)
 
+    account_pool = int(account_pool or 0)
+    merchant_pool = int(merchant_pool or 0)
+    if account_pool <= 0:
+        account_pool = ACCOUNT_POOL
+    if merchant_pool <= 0:
+        merchant_pool = MERCHANT_POOL
+
     for i, row in df.iterrows():
         row = row.copy()
-        row["_account_id"] = f"C-{i % ACCOUNT_POOL:06d}"
-        row["_merchant_id"] = f"M-{(i * 11) % MERCHANT_POOL:05d}"
+        row["_account_id"] = f"C-{int(i) % account_pool:06d}"
+        row["_merchant_id"] = f"M-{(int(i) * 11) % merchant_pool:05d}"
 
         et: Optional[datetime] = fixed_event_time
 
@@ -320,9 +423,7 @@ def iter_replay(
                     tsec = _row_time_sec(row)
                     et = anchor + timedelta(seconds=tsec)
         elif et is None:
-            if anchor is not None:
-                tsec = _row_time_sec(row)
-                et = anchor + timedelta(seconds=tsec)
+            et = end
 
         key, payload, headers = make_record(
             row,
@@ -402,9 +503,9 @@ def build_producer(bootstrap: str):
 
 
 def run():
-    df, feature_cols = load_csv(ARGS.dataset_csv)
     global FEATURE_PARAMS
 
+    df, feature_cols = load_csv(ARGS.dataset_csv)
     FEATURE_PARAMS = json.loads(Path(ARGS.feature_params).read_text())
     model_feature_names: list[str] = FEATURE_PARAMS["order"]
 
@@ -430,6 +531,9 @@ def run():
         except Exception as e:
             raise RuntimeError(f"Bad --event-time-iso value: {ARGS.event_time_iso!r} ({e})") from e
 
+    account_pool = int(getattr(ARGS, "account_pool", ACCOUNT_POOL) or ACCOUNT_POOL)
+    merchant_pool = int(getattr(ARGS, "merchant_pool", MERCHANT_POOL) or MERCHANT_POOL)
+
     if ARGS.mode == "replay":
         gen = iter_replay(
             df,
@@ -442,6 +546,8 @@ def run():
             ARGS.event_time_days,
             fixed_event_time,
             ARGS.seed,
+            account_pool,
+            merchant_pool,
         )
     else:
         gen = iter_sampled(
@@ -457,6 +563,14 @@ def run():
             ARGS.event_time_mode,
             ARGS.event_time_days,
             fixed_event_time,
+            account_pool,
+            merchant_pool,
+            ARGS.mix,
+            ARGS.p_rules,
+            ARGS.p_ml,
+            ARGS.p_both,
+            ARGS.hot_accounts,
+            ARGS.hot_ratio,
         )
 
     rate = rate_limiter(ARGS.rate_per_sec)
@@ -483,7 +597,7 @@ def run():
 
         try:
             if sent < 5:
-                print(f"[sample] event_id={payload['event_id']} event_time={payload['event_time']} timestamp={payload['timestamp']}")
+                print(f"[sample] event_id={payload['event_id']} event_time={payload['event_time']} timestamp={payload['timestamp']} fraud_pattern={payload.get('fraud_pattern')}")
 
             prod.send(ARGS.topic, key=key, value=payload, headers=headers)
             sent += 1
@@ -530,9 +644,21 @@ def parse_args():
         default="dataset",
     )
 
-    # NEW: fixed event_time override
+    # fixed event_time override
     p.add_argument("--event-time-ago-days", dest="event_time_ago_days", type=float, default=None)
     p.add_argument("--event-time-iso", dest="event_time_iso", type=str, default=None)
+
+    # pool sizing
+    p.add_argument("--account-pool", dest="account_pool", type=int)
+    p.add_argument("--merchant-pool", dest="merchant_pool", type=int)
+
+    # scenario mix
+    p.add_argument("--mix", default="balanced", help="balanced | rules | ml | both | custom")
+    p.add_argument("--p-rules", dest="p_rules", type=float, default=0.34)
+    p.add_argument("--p-ml", dest="p_ml", type=float, default=0.33)
+    p.add_argument("--p-both", dest="p_both", type=float, default=0.33)
+    p.add_argument("--hot-accounts", dest="hot_accounts", type=int, default=25, help="Small set of accounts reused to trigger frequency/velocity")
+    p.add_argument("--hot-ratio", dest="hot_ratio", type=float, default=0.25, help="Chance to pick from hot accounts")
 
     args = p.parse_args()
 
@@ -561,6 +687,14 @@ def parse_args():
         event_time_mode=pick("event_time_mode", "dataset"),
         event_time_ago_days=args.event_time_ago_days,
         event_time_iso=args.event_time_iso,
+        account_pool=int(pick("account_pool", ACCOUNT_POOL)),
+        merchant_pool=int(pick("merchant_pool", MERCHANT_POOL)),
+        mix=pick("mix", "balanced"),
+        p_rules=float(pick("p_rules", 0.34)),
+        p_ml=float(pick("p_ml", 0.33)),
+        p_both=float(pick("p_both", 0.33)),
+        hot_accounts=int(pick("hot_accounts", 25)),
+        hot_ratio=float(pick("hot_ratio", 0.25)),
     )
 
 

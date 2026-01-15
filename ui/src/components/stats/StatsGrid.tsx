@@ -111,7 +111,13 @@ export function StatsGrid({
 
     const lastHour = stats.windows?.lastHour ?? 0;
 
-    const throughputValue = lastHour > 0 ? fmt.nfRate.format(derived.alertsPerSec) : "0";
+    const throughputValue = fmt.nfRate.format(lastHour / 3600);
+
+    const trend = derived.hourTrendPct == null
+        ? undefined
+        : { pct: derived.hourTrendPct, label: "Last 60m vs previous 60m" };
+
+
 
     const severityItems = (derived.bySeverity ?? [])
         .map((s) => ({
@@ -179,9 +185,10 @@ export function StatsGrid({
                     icon={<GaugeIcon className="size-4" />}
                     value={`${throughputValue} alerts/sec`}
                     subvalue={`Last hour: ${fmt.nf0.format(lastHour)} alerts`}
-                    trend={{ pct: derived.hourTrendPct, label: "Current hour vs previous hour (bucket counts)" }}
+                    trend={trend}
                     sparkline={derived.sparkCounts}
                 />
+
             </div>
         </TooltipProvider>
     );

@@ -88,35 +88,31 @@ services:
     container_name: flink-jobmanager
     command: jobmanager
     environment:
-      - LOG4J_CONFIGURATION_FILE=/opt/flink/conf/log4j2.properties
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - TRANSACTIONS_TOPIC=transactions
-      - KAFKA_CONSUMER_GROUP=fraud-detector
-      - FLINK_CHECKPOINT_INTERVAL_MS=60000
-      - FLINK_DEFAULT_PARALLELISM=4
-      - ONNX_MODEL_SRC=resource
-      - ONNX_MODEL_RESOURCE=/model/best_model.onnx
-      - MODEL_VERSION=best_model.onnx
-      - RULE_MAX_TX_PER_MINUTE=5
-      - RULE_FREQUENCY_WINDOW_MS=60000
-      - RULE_HIGH_AMOUNT_THRESHOLD=5000
-      - RULE_VELOCITY_MIN_GAP_MS=5000
-      - RULE_MODEL_SCORE_THRESHOLD=0.8
-      - ML_FRAUD_THRESHOLD=0.5
-      - ALERT_SCORE_THRESHOLD=0.8
-#      - RULE_MAX_TX_PER_MINUTE=1          # flag freq on almost every account hit
-#      - RULE_FREQUENCY_WINDOW_MS=60000
-#      - RULE_HIGH_AMOUNT_THRESHOLD=10     # anything >10 EUR is "high"
-#      - RULE_VELOCITY_MIN_GAP_MS=60000    # disable velocity (needs < 60s)
-#      - RULE_MODEL_SCORE_THRESHOLD=0.1    # ANY score -> HIGH_MODEL_SCORE
-#      - ML_FRAUD_THRESHOLD=0.05
-#      - ALERT_SCORE_THRESHOLD=0.08
+      LOG4J_CONFIGURATION_FILE: /opt/flink/conf/log4j2.properties
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TRANSACTIONS_TOPIC: transactions
+      KAFKA_CONSUMER_GROUP: fraud-detector
+      FLINK_CHECKPOINT_INTERVAL_MS: "60000"
+      FLINK_DEFAULT_PARALLELISM: "4"
+      ONNX_MODEL_SRC: resource
+      ONNX_MODEL_RESOURCE: /model/best_model.onnx
+      MODEL_VERSION: best_model.onnx
 
-      - ALERTS_TOPIC=fraud_alerts
-      - ELASTICSEARCH_HOST=elasticsearch
-      - ELASTICSEARCH_PORT=9200
-      - ELASTICSEARCH_SCHEME=HTTP
-      - ELASTICSEARCH_ALERT_INDEX_PREFIX=fraud-alerts
+      RULE_MODEL_SCORE_THRESHOLD: "0.65"
+      ML_FRAUD_THRESHOLD: "0.85"
+
+      RULE_HIGH_AMOUNT_THRESHOLD: "1500"
+      RULE_MAX_TX_PER_MINUTE: "6"
+      RULE_FREQUENCY_WINDOW_MS: "60000"
+      RULE_VELOCITY_MIN_GAP_MS: "2000"
+
+      ALERT_SCORE_THRESHOLD: "0.0"
+
+      ALERTS_TOPIC: fraud_alerts
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: "9200"
+      ELASTICSEARCH_SCHEME: HTTP
+      ELASTICSEARCH_ALERT_INDEX_PREFIX: fraud-alerts
     restart: unless-stopped
     ports:
       - "8081:8081"

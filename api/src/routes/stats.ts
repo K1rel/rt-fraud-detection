@@ -78,7 +78,10 @@ export default function createStatsRouter(esClient: Client): Router {
             const totalAlerts = aggs.total_count?.doc_count ?? 0;
 
             const lastHour = aggs.last_hour?.doc_count ?? 0;
+            const prevHour = aggs.prev_hour?.doc_count ?? 0;
             const lastDay = aggs.last_day?.doc_count ?? 0;
+            const prevDay  = aggs.prev_day?.doc_count ?? 0;
+
             const lastWeek = aggs.last_week?.doc_count ?? 0;
 
             const avgFraudScore = aggs.avg_fraud_score?.value ?? null;
@@ -102,7 +105,9 @@ export default function createStatsRouter(esClient: Client): Router {
                 totalAlerts,
                 windows: {
                     lastHour,
+                    prevHour,
                     lastDay,
+                    prevDay,
                     lastWeek,
                 },
                 avgFraudScore,

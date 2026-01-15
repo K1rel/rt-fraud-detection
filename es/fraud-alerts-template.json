@@ -7,56 +7,32 @@
       "index.number_of_replicas": 0
     },
     "mappings": {
-      "dynamic": "false",
+      "dynamic": false,
       "properties": {
-        "alertId": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-        },
-        "eventId": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-        },
-        "accountId": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-        },
-        "cardId": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-        },
+        "alertId":   { "type": "keyword" },
+        "eventId":   { "type": "keyword" },
+        "accountId": { "type": "keyword" },
+        "cardId":    { "type": "keyword" },
 
         "createdAt": { "type": "date" },
-        "eventTime":  { "type": "date" },
-        "scoredAt":   { "type": "date" },
+        "eventTime": { "type": "date" },
+        "scoredAt":  { "type": "date" },
 
         "amount":   { "type": "double" },
-        "currency": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 32 } }
-        },
+        "currency": { "type": "keyword", "ignore_above": 32 },
 
         "fraudScore":      { "type": "double" },
         "fraudPrediction": { "type": "boolean" },
 
-        "detectionMethod": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 64 } }
-        },
-        "severity": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 64 } }
-        },
+        "detectionMethod": { "type": "keyword" },
+        "severity":        { "type": "keyword" },
 
-        "modelVersion": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-        },
-        "inferenceMs": { "type": "double" },
+        "modelVersion": { "type": "keyword", "ignore_above": 256 },
+        "inferenceMs":  { "type": "double" },
 
         "reasons": { "type": "keyword" },
 
-        "features": { "type": "object", "enabled": false },
+        "features":             { "type": "object", "enabled": false },
         "featureContributions": { "type": "object", "enabled": false }
       }
     }

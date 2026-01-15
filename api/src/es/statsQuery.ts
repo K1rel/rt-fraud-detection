@@ -21,8 +21,18 @@ export function buildStatsAggBody(opts: BuildStatsOptions = {}): Record<string, 
             total_count: {
                 filter: { match_all: {} },
             },
-            last_hour: { filter: { range: { eventTime: { gte: "now-1h", format: "strict_date_optional_time" }}}},
+            last_hour: {
+                filter: {
+                    range: { eventTime: { gte: "now-1h", format: "strict_date_optional_time" } }
+                }
+            },
+            prev_hour: {
+                filter: {
+                    range: { eventTime: { gte: "now-2h", lt: "now-1h", format: "strict_date_optional_time" } }
+                }
+            },
             last_day:  { filter: { range: { eventTime: { gte: "now-24h", format: "strict_date_optional_time" }}}},
+            prev_day:  { filter: { range: { eventTime: { gte: "now-48h", lt: "now-24h", format: "strict_date_optional_time" } } } },
             last_week: { filter: { range: { eventTime: { gte: "now-7d", format: "strict_date_optional_time" }}}},
 
             avg_fraud_score: {

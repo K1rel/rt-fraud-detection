@@ -42,6 +42,7 @@ public class FraudAlert implements Serializable {
     private Double inferenceMs;
 
     private String createdAt;
+    private String txTimestamp;
 
     public FraudAlert() {
     }
@@ -99,6 +100,7 @@ public class FraudAlert implements Serializable {
         a.setScoredAt(scored.getScoredAt());
         a.setInferenceMs(scored.getInferenceLatencyMs());
         a.setEventTime(eventIso);
+        a.setTxTimestamp(tx.getTimestamp());
 
         return a;
 
@@ -297,33 +299,56 @@ public class FraudAlert implements Serializable {
         this.eventTime = eventTime;
     }
 
+    public String getTxTimestamp() {
+        return txTimestamp;
+    }
+
+    public void setTxTimestamp(String txTimestamp) {
+        this.txTimestamp = txTimestamp;
+    }
+
     @Override
     public String toString() {
         return "FraudAlert{" +
-                "alertId='" + alertId + '\'' +
-                ", eventId='" + eventId + '\'' +
-                ", accountId='" + accountId + '\'' +
-                ", cardId='" + cardId + '\'' +
-                ", amount=" + amount +
-                ", currency='" + currency + '\'' +
-                ", fraudScore=" + fraudScore +
-                ", fraudPrediction=" + fraudPrediction +
-                ", detectionMethod=" + detectionMethod +
-                ", reasons=" + reasons +
-                ", severity=" + severity +
-                ", createdAt='" + createdAt + '\'' +
-                '}';
+        "alertId='" + alertId + '\'' +
+        ", eventId='" + eventId + '\'' +
+        ", eventTime='" + eventTime + '\'' +
+        ", txTimestamp='" + txTimestamp + '\'' +
+        ", accountId='" + accountId + '\'' +
+        ", cardId='" + cardId + '\'' +
+        ", amount=" + amount +
+        ", currency='" + currency + '\'' +
+        ", fraudScore=" + fraudScore +
+        ", fraudPrediction=" + fraudPrediction +
+        ", detectionMethod=" + detectionMethod +
+        ", reasons=" + reasons +
+        ", severity=" + severity +
+        ", createdAt='" + createdAt + '\'' +
+        '}';
     }
 
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         FraudAlert that = (FraudAlert) o;
-        return Double.compare(amount, that.amount) == 0 && Double.compare(fraudScore, that.fraudScore) == 0 && fraudPrediction == that.fraudPrediction && Objects.equals(alertId, that.alertId) && Objects.equals(eventId, that.eventId) && Objects.equals(accountId, that.accountId) && Objects.equals(cardId, that.cardId) && Objects.equals(currency, that.currency) && detectionMethod == that.detectionMethod && Objects.equals(reasons, that.reasons) && severity == that.severity && Objects.equals(createdAt, that.createdAt);
+        return Double.compare(amount, that.amount) == 0
+        && Double.compare(fraudScore, that.fraudScore) == 0
+        && fraudPrediction == that.fraudPrediction
+        && Objects.equals(alertId, that.alertId)
+        && Objects.equals(eventId, that.eventId)
+        && Objects.equals(eventTime, that.eventTime)
+        && Objects.equals(txTimestamp, that.txTimestamp)
+        && Objects.equals(accountId, that.accountId)
+        && Objects.equals(cardId, that.cardId)
+        && Objects.equals(currency, that.currency)
+        && detectionMethod == that.detectionMethod
+        && Objects.equals(reasons, that.reasons)
+        && severity == that.severity
+        && Objects.equals(createdAt, that.createdAt);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(alertId, eventId, accountId, cardId, amount, currency, fraudScore, fraudPrediction, detectionMethod, reasons, severity, createdAt);
+        return Objects.hash(alertId, eventId, eventTime, txTimestamp, accountId, cardId, amount, currency, fraudScore, fraudPrediction, detectionMethod, reasons, severity, createdAt);
     }
 }

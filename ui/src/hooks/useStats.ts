@@ -1,23 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import type { StatsResponse, TrendsResponse } from "@/types/stats";
 
-export type StatsResponse = {
-    totalAlerts: number;
-    windows: { lastHour: number; lastDay: number; lastWeek: number };
-    avgFraudScore: number | null;
-    breakdown: {
-        detectionMethod: Array<{ method: string; count: number }>;
-        severity: Array<{ severity: string; count: number }>;
-    };
-    topCards: Array<{ card: string; count: number }>;
-    timing?: { esTookMs: number | null; totalMs: number };
-};
-
-export type TrendsResponse = {
-    perHour: Array<{ hour: string; count: number; avgFraudScore: number | null }>;
-    scoreHistogram: Array<{ bucket: number; count: number }>;
-    timing?: { esTookMs: number | null; totalMs: number };
-};
 
 type State = {
     stats: StatsResponse | null;
@@ -114,18 +98,6 @@ export function useStats(opts?: { refreshMs?: number }) {
         return Number.isFinite(pct) ? pct : null;
     }
 
-    function lastTwoValidCounts(perHour: Array<{ count: any }>) {
-        const xs = perHour
-            .map((x) => (typeof x?.count === "number" ? x.count : null))
-            .filter((x): x is number => x != null);
-
-        const n = xs.length;
-        return {
-            prev: n >= 2 ? xs[n - 2] : null,
-            curr: n >= 1 ? xs[n - 1] : null,
-        };
-    }
-
     const derived = useMemo(() => {
         const stats = state.stats;
         const trends = state.trends;
@@ -166,6 +138,10 @@ export function useStats(opts?: { refreshMs?: number }) {
         const mlShare = totalAlerts > 0 ? (mlAlerts / totalAlerts) * 100 : 0;
 
         const lastHour = stats.windows?.lastHour ?? 0;
+        const prevHour = stats.windows.prevHour;
+
+        const hourTrendPct = pctChange(lastHour, prevHour);
+
         const alertsPerSec = lastHour / 3600;
 
         const week = stats.windows?.lastWeek ?? 0;
@@ -173,10 +149,6 @@ export function useStats(opts?: { refreshMs?: number }) {
         const avgPerDayWeek = week > 0 ? week / 7 : 0;
         const dayTrendPct =
             avgPerDayWeek > 0 ? ((day - avgPerDayWeek) / avgPerDayWeek) * 100 : null;
-
-        const { prev: prevHourCount, curr: currHourCount } = lastTwoValidCounts(perHour);
-        const hourTrendPct = pctChange(currHourCount, prevHourCount);
-
 
         const scorePoints = perHour
             .map((p) => p.avgFraudScore)
