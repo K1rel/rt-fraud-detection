@@ -7,7 +7,12 @@ import {
     normalizeSeverity,
     severityBadgeVariant,
 } from "@/lib/alerts";
-import type { AlertDetail, AlertItem } from "@/types/alert_types";
+import type {
+    AlertDetail,
+    AlertItem,
+    ReviewStatus,
+    EscalationStatus,
+} from "@/types/alert_types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,14 +22,13 @@ import {
     DialogDescription,
     DialogHeader,
     DialogTitle,
-    DialogClose
+    DialogClose,
 } from "@/components/ui/dialog";
 
 type Props = {
     open: boolean;
     onOpenChange: (v: boolean) => void;
     alert: AlertItem | null;
-
     hasPrev?: boolean;
     hasNext?: boolean;
     onPrev?: () => void;
@@ -59,6 +63,34 @@ function downloadJson(filename: string, obj: unknown) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function normalizeReviewStatus(value: unknown): ReviewStatus {
+    const s = String(value ?? "").trim().toUpperCase();
+    if (s === "FALSE_POSITIVE") return "FALSE_POSITIVE";
+    if (s === "CLOSED") return "CLOSED";
+    return "OPEN";
+}
+
+function reviewBadgeVariant(
+    status: ReviewStatus
+): "default" | "secondary" | "outline" {
+    if (status === "FALSE_POSITIVE") return "secondary";
+    if (status === "CLOSED") return "default";
+    return "outline";
+}
+
+function normalizeEscalationStatus(value: unknown): EscalationStatus {
+    const s = String(value ?? "").trim().toUpperCase();
+    if (s === "ESCALATED") return "ESCALATED";
+    return "NONE";
+}
+
+function escalationBadgeVariant(
+    status: EscalationStatus
+): "destructive" | "outline" {
+    if (status === "ESCALATED") return "destructive";
+    return "outline";
 }
 
 function ScoreGauge({ score }: { score: number }) {
@@ -137,6 +169,17 @@ function KeyValueGrid({
     );
 }
 
+function reviewActionText(status: ReviewStatus): string {
+    if (status === "FALSE_POSITIVE") return "Marked as False Positive";
+    if (status === "CLOSED") return "Marked as Closed";
+    return "Marked as Open";
+}
+
+function escalationActionText(status: EscalationStatus): string {
+    if (status === "ESCALATED") return "Escalated alert";
+    return "Cleared escalation";
+}
+
 export function AlertDetail({
                                 open,
                                 onOpenChange,
@@ -153,13 +196,13 @@ export function AlertDetail({
     const [err, setErr] = useState<string | null>(null);
     const [detail, setDetail] = useState<AlertDetail | null>(null);
     const [actionMsg, setActionMsg] = useState<string | null>(null);
+    const [savingReview, setSavingReview] = useState(false);
+    const [savingEscalation, setSavingEscalation] = useState(false);
 
     const id = (alert?.alertId ?? alert?.id ?? "").toString();
 
     useEffect(() => {
         if (!open) return;
-
-        // reset action feedback when opening
         setActionMsg(null);
     }, [open]);
 
@@ -209,7 +252,6 @@ export function AlertDetail({
         };
     }, [open, id]);
 
-    // keyboard navigation
     useEffect(() => {
         if (!open) return;
 
@@ -228,14 +270,30 @@ export function AlertDetail({
         return () => window.removeEventListener("keydown", onKey);
     }, [open, hasPrev, hasNext, onPrev, onNext]);
 
-    const sev = useMemo(() => normalizeSeverity(detail?.severity ?? alert?.severity), [detail?.severity, alert?.severity]);
-    const score = useMemo(() => clamp01((detail?.fraudScore ?? alert?.fraudScore) as any, 0), [detail?.fraudScore, alert?.fraudScore]);
+    const sev = useMemo(
+        () => normalizeSeverity(detail?.severity ?? alert?.severity),
+        [detail?.severity, alert?.severity]
+    );
+
+    const reviewStatus = useMemo(
+        () => normalizeReviewStatus(detail?.reviewStatus ?? alert?.reviewStatus),
+        [detail?.reviewStatus, alert?.reviewStatus]
+    );
+
+    const escalationStatus = useMemo(
+        () => normalizeEscalationStatus(detail?.escalationStatus ?? alert?.escalationStatus),
+        [detail?.escalationStatus, alert?.escalationStatus]
+    );
+
+    const score = useMemo(
+        () => clamp01((detail?.fraudScore ?? alert?.fraudScore) as any, 0),
+        [detail?.fraudScore, alert?.fraudScore]
+    );
 
     const reasons = useMemo(() => {
         const r = (detail as any)?.reasons;
         return Array.isArray(r) ? r : [];
     }, [detail]);
-
 
     const transactionObj = useMemo(() => {
         if (!detail) return null;
@@ -256,14 +314,14 @@ export function AlertDetail({
         const d: any = detail ?? alert ?? {};
         const items: Array<{ label: string; value: unknown }> = [];
 
-        // best-effort keys
         const txTs =
             d.transactionTs ?? d.txTs ?? d.eventTs ?? d.eventTime ?? d.transactionTime ?? d.txTime ?? null;
         if (txTs) items.push({ label: "Transaction time", value: txTs });
 
         if (d.createdAt) items.push({ label: "Alert created", value: d.createdAt });
+        if (d.reviewedAt) items.push({ label: "Reviewed at", value: d.reviewedAt });
+        if (d.escalatedAt) items.push({ label: "Escalated at", value: d.escalatedAt });
 
-        // _rt timestamps if present
         const rt = d._rt;
         if (rt && typeof rt === "object") {
             for (const [k, v] of Object.entries(rt)) {
@@ -273,7 +331,6 @@ export function AlertDetail({
             }
         }
 
-        // dedupe by label
         const seen = new Set<string>();
         return items.filter((it) => {
             if (seen.has(it.label)) return false;
@@ -283,12 +340,89 @@ export function AlertDetail({
     }, [detail, alert]);
 
     const json = useMemo(() => (detail ? toPrettyJson(detail) : ""), [detail]);
-
     const displayId = (detail?.alertId ?? detail?.id ?? id ?? "—").toString();
+
+    async function updateReviewStatus(nextStatus: ReviewStatus) {
+        if (!displayId) return;
+
+        setSavingReview(true);
+        setActionMsg(null);
+
+        try {
+            const res = await api.patch<{ ok: boolean; item: AlertDetail }>(
+                `/api/alerts/${encodeURIComponent(displayId)}/review`,
+                { reviewStatus: nextStatus }
+            );
+
+            const updated = res.data?.item;
+            if (!updated) throw new Error("empty_update_response");
+
+            cacheRef.current.set(displayId, updated);
+            setDetail(updated);
+            setActionMsg(reviewActionText(nextStatus));
+
+            window.dispatchEvent(
+                new CustomEvent("alerts:review-updated", {
+                    detail: {
+                        id: displayId,
+                        reviewStatus: nextStatus,
+                    },
+                })
+            );
+        } catch (e: any) {
+            setActionMsg(
+                e?.response?.data?.error ||
+                e?.message ||
+                "Failed to update review status"
+            );
+        } finally {
+            setSavingReview(false);
+        }
+    }
+
+    async function updateEscalationStatus(nextStatus: EscalationStatus) {
+        if (!displayId) return;
+
+        setSavingEscalation(true);
+        setActionMsg(null);
+
+        try {
+            const res = await api.patch<{ ok: boolean; item: AlertDetail }>(
+                `/api/alerts/${encodeURIComponent(displayId)}/escalation`,
+                { escalationStatus: nextStatus }
+            );
+
+            const updated = res.data?.item;
+            if (!updated) throw new Error("empty_update_response");
+
+            cacheRef.current.set(displayId, updated);
+            setDetail(updated);
+            setActionMsg(escalationActionText(nextStatus));
+
+            window.dispatchEvent(
+                new CustomEvent("alerts:escalation-updated", {
+                    detail: {
+                        id: displayId,
+                        escalationStatus: nextStatus,
+                    },
+                })
+            );
+        } catch (e: any) {
+            setActionMsg(
+                e?.response?.data?.error ||
+                e?.message ||
+                "Failed to update escalation status"
+            );
+        } finally {
+            setSavingEscalation(false);
+        }
+    }
 
     const topBadges = (
         <>
             <Badge variant={severityBadgeVariant(sev)}>{sev}</Badge>
+            <Badge variant={reviewBadgeVariant(reviewStatus)}>{reviewStatus}</Badge>
+            <Badge variant={escalationBadgeVariant(escalationStatus)}>{escalationStatus}</Badge>
             <Badge variant="outline">time: {formatTimestamp(detail?.createdAt ?? alert?.createdAt)}</Badge>
             <Badge variant="outline">method: {(detail?.detectionMethod ?? alert?.detectionMethod ?? "—").toString()}</Badge>
             <Badge variant="outline">id: {displayId}</Badge>
@@ -305,179 +439,205 @@ export function AlertDetail({
                     </DialogDescription>
                 </DialogHeader>
                 <div className="max-h-[75vh] overflow-y-auto pr-2">
-                {actionMsg ? (
-                    <div className="rounded-lg border bg-secondary/20 p-3 text-sm">
-                        <span className="font-medium">Action:</span>{" "}
-                        <span className="text-muted-foreground">{actionMsg}</span>
-                    </div>
-                ) : null}
+                    {actionMsg ? (
+                        <div className="rounded-lg border bg-secondary/20 p-3 text-sm">
+                            <span className="font-medium">Action:</span>{" "}
+                            <span className="text-muted-foreground">{actionMsg}</span>
+                        </div>
+                    ) : null}
 
-                {loading ? (
-                    <div className="space-y-3">
-                        <Skeleton className="h-10 w-full" />
-                        <Skeleton className="h-40 w-full" />
-                        <Skeleton className="h-40 w-full" />
-                    </div>
-                ) : err ? (
-                    <div className="rounded-lg border p-4">
-                        <div className="font-medium">Failed to load alert details</div>
-                        <div className="text-sm text-muted-foreground">{err}</div>
-                    </div>
-                ) : !detail ? (
-                    <div className="rounded-lg border p-4 text-sm text-muted-foreground">—</div>
-                ) : (
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        {/* Summary */}
-                        <div className="rounded-xl border p-4">
-                            <div className="mb-3 flex items-center justify-between">
-                                <div className="text-sm font-semibold">Summary</div>
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={async () => {
-                                            try {
-                                                await navigator.clipboard.writeText(displayId);
-                                                setActionMsg("Copied Alert ID to clipboard");
-                                            } catch {
-                                                setActionMsg("Copy failed (clipboard blocked)");
-                                            }
-                                        }}
-                                    >
-                                        Copy Alert ID
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                            downloadJson(`alert_${displayId}.json`, detail);
-                                            setActionMsg("Exported alert JSON");
-                                        }}
-                                    >
-                                        Export JSON
-                                    </Button>
+                    {loading ? (
+                        <div className="space-y-3">
+                            <Skeleton className="h-10 w-full" />
+                            <Skeleton className="h-40 w-full" />
+                            <Skeleton className="h-40 w-full" />
+                        </div>
+                    ) : err ? (
+                        <div className="rounded-lg border p-4">
+                            <div className="font-medium">Failed to load alert details</div>
+                            <div className="text-sm text-muted-foreground">{err}</div>
+                        </div>
+                    ) : !detail ? (
+                        <div className="rounded-lg border p-4 text-sm text-muted-foreground">—</div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                            <div className="rounded-xl border p-4">
+                                <div className="mb-3 flex items-center justify-between">
+                                    <div className="text-sm font-semibold">Summary</div>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={async () => {
+                                                try {
+                                                    await navigator.clipboard.writeText(displayId);
+                                                    setActionMsg("Copied Alert ID to clipboard");
+                                                } catch {
+                                                    setActionMsg("Copy failed (clipboard blocked)");
+                                                }
+                                            }}
+                                        >
+                                            Copy Alert ID
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                                downloadJson(`alert_${displayId}.json`, detail);
+                                                setActionMsg("Exported alert JSON");
+                                            }}
+                                        >
+                                            Export JSON
+                                        </Button>
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-3">
-                                <ScoreGauge score={score} />
+                                <div className="space-y-3">
+                                    <ScoreGauge score={score} />
 
-                                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                                    <div className="rounded-lg border bg-background p-2">
-                                        <div className="text-[11px] font-mono text-muted-foreground">amount</div>
-                                        <div className="mt-1 text-xs">
-                                            {typeof detail.amount === "number"
-                                                ? `${detail.amount.toFixed(2)} ${String(detail.currency ?? "")}`.trim()
-                                                : "—"}
+                                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                        <div className="rounded-lg border bg-background p-2">
+                                            <div className="text-[11px] font-mono text-muted-foreground">amount</div>
+                                            <div className="mt-1 text-xs">
+                                                {typeof detail.amount === "number"
+                                                    ? `${detail.amount.toFixed(2)} ${String(detail.currency ?? "")}`.trim()
+                                                    : "—"}
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-lg border bg-background p-2">
+                                            <div className="text-[11px] font-mono text-muted-foreground">cardId</div>
+                                            <div className="mt-1 text-xs font-mono">{maskId(detail.cardId, 4)}</div>
+                                        </div>
+
+                                        <div className="rounded-lg border bg-background p-2">
+                                            <div className="text-[11px] font-mono text-muted-foreground">accountId</div>
+                                            <div className="mt-1 text-xs font-mono">{String((detail as any).accountId ?? "—")}</div>
+                                        </div>
+
+                                        <div className="rounded-lg border bg-background p-2">
+                                            <div className="text-[11px] font-mono text-muted-foreground">eventId</div>
+                                            <div className="mt-1 text-xs font-mono">{String((detail as any).eventId ?? "—")}</div>
                                         </div>
                                     </div>
 
-                                    <div className="rounded-lg border bg-background p-2">
-                                        <div className="text-[11px] font-mono text-muted-foreground">cardId</div>
-                                        <div className="mt-1 text-xs font-mono">{maskId(detail.cardId, 4)}</div>
-                                    </div>
-
-                                    <div className="rounded-lg border bg-background p-2">
-                                        <div className="text-[11px] font-mono text-muted-foreground">accountId</div>
-                                        <div className="mt-1 text-xs font-mono">{String((detail as any).accountId ?? "—")}</div>
-                                    </div>
-
-                                    <div className="rounded-lg border bg-background p-2">
-                                        <div className="text-[11px] font-mono text-muted-foreground">eventId</div>
-                                        <div className="mt-1 text-xs font-mono">{String((detail as any).eventId ?? "—")}</div>
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                            console.log("[alert_action] false_positive", { id: displayId });
-                                            setActionMsg("Marked as False Positive (stub)");
-                                        }}
-                                    >
-                                        Mark as False Positive
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                            console.log("[alert_action] escalate", { id: displayId });
-                                            setActionMsg("Escalated alert (stub)");
-                                        }}
-                                    >
-                                        Escalate Alert
-                                    </Button>
-
-                                    <div className="ml-auto flex items-center gap-2">
-                                        <Button size="sm" variant="outline" onClick={onPrev} disabled={!hasPrev || !onPrev}>
-                                            Prev
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant={reviewStatus === "OPEN" ? "secondary" : "outline"}
+                                            disabled={savingReview || reviewStatus === "OPEN"}
+                                            onClick={() => void updateReviewStatus("OPEN")}
+                                        >
+                                            {savingReview && reviewStatus !== "OPEN"
+                                                ? "Saving..."
+                                                : "Mark as Open"}
                                         </Button>
-                                        <Button size="sm" variant="outline" onClick={onNext} disabled={!hasNext || !onNext}>
-                                            Next
+
+                                        <Button
+                                            size="sm"
+                                            variant={reviewStatus === "FALSE_POSITIVE" ? "secondary" : "outline"}
+                                            disabled={savingReview || reviewStatus === "FALSE_POSITIVE"}
+                                            onClick={() => void updateReviewStatus("FALSE_POSITIVE")}
+                                        >
+                                            {savingReview && reviewStatus !== "FALSE_POSITIVE"
+                                                ? "Saving..."
+                                                : "Mark as False Positive"}
                                         </Button>
+
+                                        <Button
+                                            size="sm"
+                                            variant={reviewStatus === "CLOSED" ? "secondary" : "outline"}
+                                            disabled={savingReview || reviewStatus === "CLOSED"}
+                                            onClick={() => void updateReviewStatus("CLOSED")}
+                                        >
+                                            {savingReview && reviewStatus !== "CLOSED"
+                                                ? "Saving..."
+                                                : "Mark as Closed"}
+                                        </Button>
+
+                                        <Button
+                                            size="sm"
+                                            variant={escalationStatus === "ESCALATED" ? "secondary" : "outline"}
+                                            disabled={savingEscalation}
+                                            onClick={() =>
+                                                void updateEscalationStatus(
+                                                    escalationStatus === "ESCALATED" ? "NONE" : "ESCALATED"
+                                                )
+                                            }
+                                        >
+                                            {savingEscalation
+                                                ? "Saving..."
+                                                : escalationStatus === "ESCALATED"
+                                                    ? "Clear Escalation"
+                                                    : "Escalate Alert"}
+                                        </Button>
+
+                                        <div className="ml-auto flex items-center gap-2">
+                                            <Button size="sm" variant="outline" onClick={onPrev} disabled={!hasPrev || !onPrev}>
+                                                Prev
+                                            </Button>
+                                            <Button size="sm" variant="outline" onClick={onNext} disabled={!hasNext || !onNext}>
+                                                Next
+                                            </Button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="space-y-4">
-                            <div className="rounded-xl border p-4">
-                                <div className="mb-3 text-sm font-semibold">Rule violations</div>
-                                {reasons.length === 0 ? (
-                                    <div className="text-sm text-muted-foreground">—</div>
-                                ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                        {reasons.map((r: any, idx: number) => (
-                                            <Badge key={`${String(r)}-${idx}`} variant="secondary">
-                                                {formatReason(r)}
-                                            </Badge>
-                                        ))}
-                                    </div>
-                                )}
+                            <div className="space-y-4">
+                                <div className="rounded-xl border p-4">
+                                    <div className="mb-3 text-sm font-semibold">Rule violations</div>
+                                    {reasons.length === 0 ? (
+                                        <div className="text-sm text-muted-foreground">—</div>
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                            {reasons.map((r: any, idx: number) => (
+                                                <Badge key={`${String(r)}-${idx}`} variant="secondary">
+                                                    {formatReason(r)}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Transaction fields */}
-                        <KeyValueGrid obj={transactionObj} title="Transaction fields" emptyText="No transaction fields found." />
+                            <KeyValueGrid obj={transactionObj} title="Transaction fields" emptyText="No transaction fields found." />
 
-                        {/* Timeline + Raw JSON */}
-                        <div className="space-y-4">
-                            <div className="rounded-xl border p-4">
-                                <div className="mb-3 text-sm font-semibold">Timeline</div>
-                                {timeline.length === 0 ? (
-                                    <div className="text-sm text-muted-foreground">—</div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        {timeline.map((it) => (
-                                            <div key={it.label} className="flex items-center justify-between rounded-lg border bg-background p-2">
-                                                <div className="text-xs font-mono">{it.label}</div>
-                                                <div className="text-xs text-muted-foreground">
-                                                    {typeof it.value === "string" && it.value.includes("T")
-                                                        ? formatTimestamp(it.value)
-                                                        : String(it.value ?? "—")}
+                            <div className="space-y-4">
+                                <div className="rounded-xl border p-4">
+                                    <div className="mb-3 text-sm font-semibold">Timeline</div>
+                                    {timeline.length === 0 ? (
+                                        <div className="text-sm text-muted-foreground">—</div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {timeline.map((it) => (
+                                                <div key={it.label} className="flex items-center justify-between rounded-lg border bg-background p-2">
+                                                    <div className="text-xs font-mono">{it.label}</div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {typeof it.value === "string" && it.value.includes("T")
+                                                            ? formatTimestamp(it.value)
+                                                            : String(it.value ?? "—")}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
-                            <div className="rounded-xl border p-4">
-                                <div className="mb-2 text-sm font-semibold">Raw JSON</div>
-                                <details className="rounded-lg border bg-background p-2">
-                                    <summary className="cursor-pointer select-none text-xs text-muted-foreground">
-                                        Toggle JSON
-                                    </summary>
-                                    <pre className="mt-2 max-h-[45vh] overflow-auto text-xs leading-relaxed">
-                    {json || "—"}
-                  </pre>
-                                </details>
+                                <div className="rounded-xl border p-4">
+                                    <div className="mb-2 text-sm font-semibold">Raw JSON</div>
+                                    <details className="rounded-lg border bg-background p-2">
+                                        <summary className="cursor-pointer select-none text-xs text-muted-foreground">
+                                            Toggle JSON
+                                        </summary>
+                                        <pre className="mt-2 max-h-[45vh] overflow-auto text-xs leading-relaxed">
+                                            {json || "—"}
+                                        </pre>
+                                    </details>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )}
                 </div>
                 <div className="mt-3 flex items-center justify-end gap-2 border-t pt-3">
                     <DialogClose asChild>

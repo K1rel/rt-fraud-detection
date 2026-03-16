@@ -1,7 +1,8 @@
 export const SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 
 export type Severity = (typeof SEVERITIES)[number] | "UNKNOWN";
-
+export type ReviewStatus = "OPEN" | "FALSE_POSITIVE" | "CLOSED";
+export type EscalationStatus = "NONE" | "ESCALATED";
 
 export interface AlertItem {
     id: string;
@@ -14,6 +15,10 @@ export interface AlertItem {
     fraudScore?: number;
     severity?: Severity | string;
     detectionMethod?: string;
+    reviewStatus?: ReviewStatus | string;
+    reviewedAt?: string;
+    escalationStatus?: EscalationStatus | string;
+    escalatedAt?: string;
     [k: string]: unknown;
 }
 
@@ -46,6 +51,8 @@ export type AlertsFiltersState = {
     scoreMax: number;
     severities: Severity[];
     detectionMethod: string;
+    reviewStatus: "ALL" | ReviewStatus;
+    escalationStatus: "ALL" | EscalationStatus;
     since: string;
     until: string;
 };

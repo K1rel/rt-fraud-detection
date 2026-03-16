@@ -33,7 +33,12 @@
         "reasons": { "type": "keyword" },
 
         "features":             { "type": "object", "enabled": false },
-        "featureContributions": { "type": "object", "enabled": false }
+        "featureContributions": { "type": "object", "enabled": false },
+        "txTimestamp": { "type": "date" },
+        "reviewStatus": { "type": "keyword" },
+        "reviewedAt":   { "type": "date" },
+        "escalationStatus": { "type": "keyword" },
+        "escalatedAt": { "type": "date" }
       }
     }
   }

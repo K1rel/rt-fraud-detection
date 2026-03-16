@@ -30,7 +30,7 @@ export default function App() {
             activeNavKey={active}
             onNavigate={setActive}
         >
-            {active === "dashboard" ? <DashboardPage health={health} /> : null}
+            {active === "dashboard" ? <DashboardPage health={health} onOpenAlerts={() => setActive("alerts")} /> : null}
             {active === "stats" ? <StatsPage/>: null}
             {active === "alerts" ? <AlertsPage /> : null}
             {active === "settings" ? <SettingsPage /> : null}

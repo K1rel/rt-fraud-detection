@@ -8,7 +8,7 @@ state:
       cache:
         size-based-limit: 1 gb
         dir: /tmp/forst-cache
-      primary-dir: file:///remote/checkpoints
+      primary-dir: /tmp/forst-primary
     type: forst
 env:
   java:
@@ -25,7 +25,7 @@ taskmanager:
       max: 1024mb
       fraction: 0.2
       min: 128mb
-  numberOfTaskSlots: 4
+  numberOfTaskSlots: 3
   memory:
     process:
       size: 2048m
@@ -45,10 +45,9 @@ execution:
     dir: file:///remote/checkpoints
     mode: EXACTLY_ONCE
     unaligned: true
-    interval: 30s
-    timeout: 10min
-    min-pause: 5s
-    max-concurrent-checkpoints: 1
+heartbeat:
+  interval: 10s
+  timeout: 180s
 query:
   server:
     port: '6125'

@@ -2,13 +2,28 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import {HealthState } from "@/hooks/useHealth";
-import { AlertsTable } from "@/components/alerts/AlertsTable";
+import { HealthState } from "@/hooks/useHealth";
+import { useStats } from "@/hooks/useStats";
+import { StatsGrid } from "@/components/stats/StatsGrid";
+import { RecentAlertsPreview } from "@/components/dashboard/RecentAlertsPreview";
 
-export function DashboardPage({health} : {health: HealthState}) {
+type Props = {
+    health: HealthState;
+    onOpenAlerts?: () => void;
+};
+
+export function DashboardPage({ health, onOpenAlerts }: Props) {
+    const statsState = useStats({ refreshMs: 10_000 });
 
     return (
         <div className="space-y-6">
+            <div className="space-y-1">
+                <div className="text-2xl font-semibold tracking-tight">Dashboard</div>
+                <div className="text-sm text-muted-foreground">
+                    Live operational summary for the local fraud pipeline
+                </div>
+            </div>
+
             <div className="grid gap-4 lg:grid-cols-3">
                 <Card>
                     <CardHeader>
@@ -39,15 +54,29 @@ export function DashboardPage({health} : {health: HealthState}) {
                     </CardContent>
                 </Card>
 
-                <Card className="lg:col-span-2">
+                <Card>
                     <CardHeader>
-                        <CardTitle>Operational Notes</CardTitle>
+                        <CardTitle className="text-sm text-muted-foreground">Pipeline Mode</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <Alert>
+                            <AlertTitle>Realtime monitoring</AlertTitle>
+                            <AlertDescription>
+                                Dashboard is now summary-first. Use the Alerts page for full investigation and drill-down.
+                            </AlertDescription>
+                        </Alert>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-sm text-muted-foreground">Operational Notes</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <Alert>
                             <AlertTitle>Local-only</AlertTitle>
                             <AlertDescription>
-                                Configure <code>VITE_API_BASE_URL</code> (see <code>.env.example</code>). Current health:{" "}
+                                Configure <code>VITE_API_BASE_URL</code>. Current health:{" "}
                                 <code>{health.data?.status ?? (health.loading ? "loading" : "unknown")}</code>
                             </AlertDescription>
                         </Alert>
@@ -55,7 +84,9 @@ export function DashboardPage({health} : {health: HealthState}) {
                 </Card>
             </div>
 
-            <AlertsTable />
+            <StatsGrid layout="compact" data={statsState} />
+
+            <RecentAlertsPreview onOpenAllAlerts={onOpenAlerts} />
         </div>
     );
 }

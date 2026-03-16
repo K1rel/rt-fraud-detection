@@ -1,22 +1,16 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertsTable } from "@/components/alerts/AlertsTable";
 
 export function AlertsPage() {
     return (
-        <div className="space-y-4">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Alerts</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                    <Alert>
-                        <AlertTitle>Placeholder</AlertTitle>
-                        <AlertDescription>
-                            This is the navigation target to prove layout + nav works. Real alerts wiring stays in later tickets.
-                        </AlertDescription>
-                    </Alert>
-                </CardContent>
-            </Card>
+        <div className="space-y-6">
+            <div className="space-y-1">
+                <div className="text-2xl font-semibold tracking-tight">Alerts</div>
+                <div className="text-sm text-muted-foreground">
+                    Investigation workbench for live and historical fraud alerts
+                </div>
+            </div>
+
+            <AlertsTable />
         </div>
     );
 }

@@ -1,0 +1,14 @@
+services:
+  jobmanager:
+    environment:
+      # deterministic for E2E
+      RULE_MODEL_SCORE_THRESHOLD: "0.0"  # ensures ML reason always set
+      ML_FRAUD_THRESHOLD: "0.0"          # score threshold irrelevant for reasons; but makes prediction always true
+      ALERT_SCORE_THRESHOLD: "0.0"       # don't filter alerts away
+
+      # unique consumer group per run will be injected by script via env
+  taskmanager:
+    environment:
+      RULE_MODEL_SCORE_THRESHOLD: "0.0"
+      ML_FRAUD_THRESHOLD: "0.0"
+      ALERT_SCORE_THRESHOLD: "0.0"

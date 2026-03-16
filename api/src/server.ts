@@ -5,6 +5,7 @@ import http from "http";
 import {Client} from '@elastic/elasticsearch';
 import alertsRouterFactory from './routes/alerts';
 import statsRouterFactory from "./routes/stats";
+import perfRouterFactory from "./routes/perf";
 import { Server as SocketIOServer } from "socket.io";
 import {startRealtime, type StopRealtime } from "./realtime/startRealtime";
 
@@ -59,6 +60,10 @@ app.use('/api/alerts', alertsRouterFactory(esClient));
 
 //stats api
 app.use("/api/stats", statsRouterFactory(esClient));
+
+//perf api
+app.use("/api/perf", perfRouterFactory(esClient));
+
 
 app.use((req, res) => {
     res.status(404).json({

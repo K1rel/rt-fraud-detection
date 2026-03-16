@@ -3,6 +3,9 @@ import { ChartsPanel } from "@/components/stats/ChartsPanel";
 import { StatsGrid } from "@/components/stats/StatsGrid";
 import { useStats } from "@/hooks/useStats";
 import { useTrends, type TrendsRange } from "@/hooks/useTrends";
+import { PerfRunsTable } from "@/components/stats/PerfRunsTable";
+import { usePerfRuns } from "@/hooks/usePerfRuns";
+
 
 function maxIso(a: string | null, b: string | null): string | null {
     if (!a) return b;
@@ -12,6 +15,8 @@ function maxIso(a: string | null, b: string | null): string | null {
 
 export function StatsPage() {
     const [range, setRange] = useState<TrendsRange>("24h");
+    const perfState = usePerfRuns({ refreshMs: 30_000, limit: 50 });
+
 
     const statsState = useStats({ refreshMs: 10_000 });
 
@@ -38,6 +43,7 @@ export function StatsPage() {
     const refreshAll = () => {
         statsState.refreshNow();
         if (range !== "24h") trendsState.refreshNow();
+        perfState.refreshNow();
     };
 
     return (
@@ -61,6 +67,15 @@ export function StatsPage() {
                 updatedAt={updatedAt}
                 onRefresh={refreshAll}
             />
+
+            <PerfRunsTable
+                data={perfState.data}
+                loading={perfState.loading}
+                error={perfState.error}
+                updatedAt={perfState.updatedAt}
+                onRefresh={perfState.refreshNow}
+            />
+
         </div>
     );
 }

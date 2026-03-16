@@ -22,7 +22,6 @@ services:
       zookeeper:
         condition: service_healthy
     ports:
-      - "9092:9092" # internal
       - "29092:29092" # external
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -35,7 +34,9 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
 
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: "6"
 
       KAFKA_TRANSACTION_MAX_TIMEOUT_MS: "3600000"
     healthcheck:
@@ -51,12 +52,9 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
-      - bootstrap.memory_lock=true
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
+      - xpack.ml.enabled=false
+      - bootstrap.memory_lock=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g -XX:MaxDirectMemorySize=256m
     volumes:
       - esdata:/usr/share/elasticsearch/data
     ports:
@@ -84,7 +82,10 @@ services:
       timeout: 10s
       retries: 30
   jobmanager:
-    image: apache/flink:2.0.0-java17
+    build:
+      context: ./flink
+      dockerfile: Dockerfile
+    image: rt-fraud-flink:2.0.0-java17-noplugin
     container_name: flink-jobmanager
     command: jobmanager
     environment:
@@ -92,8 +93,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       TRANSACTIONS_TOPIC: transactions
       KAFKA_CONSUMER_GROUP: fraud-detector
-      FLINK_CHECKPOINT_INTERVAL_MS: "60000"
-      FLINK_DEFAULT_PARALLELISM: "4"
+      FLINK_CHECKPOINT_INTERVAL_MS: "10000"
+      FLINK_DEFAULT_PARALLELISM: "${FLINK_DEFAULT_PARALLELISM:-4}"
       ONNX_MODEL_SRC: resource
       ONNX_MODEL_RESOURCE: /model/best_model.onnx
       MODEL_VERSION: best_model.onnx
@@ -106,19 +107,21 @@ services:
       RULE_FREQUENCY_WINDOW_MS: "60000"
       RULE_VELOCITY_MIN_GAP_MS: "2000"
 
-      ALERT_SCORE_THRESHOLD: "0.0"
+      ALERT_SCORE_THRESHOLD: "${ALERT_SCORE_THRESHOLD:-0.10}"
+
 
       ALERTS_TOPIC: fraud_alerts
       ELASTICSEARCH_HOST: elasticsearch
       ELASTICSEARCH_PORT: "9200"
-      ELASTICSEARCH_SCHEME: HTTP
+      ELASTICSEARCH_SCHEME: http
       ELASTICSEARCH_ALERT_INDEX_PREFIX: fraud-alerts
+      JOB_MANAGER_RPC_ADDRESS: jobmanager
     restart: unless-stopped
     ports:
       - "8081:8081"
       - "9249:9249"
     volumes:
-      - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+      - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml
       - ./flink/conf/log4j2.properties:/opt/flink/conf/log4j2.properties:ro
       - flink-logs:/opt/flink/log
       - ./flink/remote:/remote
@@ -130,7 +133,10 @@ services:
       retries: 30
 
   taskmanager:
-    image: apache/flink:2.0.0-java17
+    build:
+      context: ./flink
+      dockerfile: Dockerfile
+    image: rt-fraud-flink:2.0.0-java17-noplugin
     command: taskmanager
     restart: unless-stopped
     depends_on:
@@ -140,13 +146,14 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TRANSACTIONS_TOPIC=transactions
       - KAFKA_CONSUMER_GROUP=fraud-detector
-      - FLINK_CHECKPOINT_INTERVAL_MS=60000
-      - FLINK_DEFAULT_PARALLELISM=4
+      - FLINK_CHECKPOINT_INTERVAL_MS=10000
+      - FLINK_DEFAULT_PARALLELISM=${FLINK_DEFAULT_PARALLELISM:-4}
       - ONNX_MODEL_SRC=resource
       - ONNX_MODEL_RESOURCE=/model/best_model.onnx
       - MODEL_VERSION=best_model.onnx
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
     volumes:
-      - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+      - ./flink/conf/config.yaml:/opt/flink/conf/config.yaml
       - ./flink/conf/log4j2.properties:/opt/flink/conf/log4j2.properties:ro
       - flink-logs:/opt/flink/log
       - ./flink/remote:/remote
@@ -174,6 +181,16 @@ services:
     depends_on:
       - elasticsearch
       - kafka
+  data-generator:
+    profiles: [ "e2e" ]
+    build:
+      context: ./data-generator
+      dockerfile: Dockerfile
+
+    volumes:
+      - ./ml-model:/ml-model:ro
+
+
 
 
 volumes:

@@ -29,11 +29,11 @@ class RuleBasedDetectionFunctionTest {
     @BeforeEach
     void setUp() throws Exception {
         RuleConfig config = new RuleConfig(
-                5,
-                60_000L,
-                1_000.0,
-                10_000L,
-                60_000L
+        5,
+        60_000L,
+        1_000.0,
+        10_000L,
+        0.5
         );
 
         RuleBasedDetectionFunction fn = new RuleBasedDetectionFunction(config);

@@ -22,6 +22,9 @@
         <onnxruntime.version>1.23.2</onnxruntime.version>
 
         <jackson.version>2.17.3</jackson.version>
+        <elasticsearch.client.version>8.14.1</elasticsearch.client.version>
+        <jakarta.json.version>2.1.3</jakarta.json.version>
+        <parsson.version>1.1.7</parsson.version>
     </properties>
 
     <dependencyManagement>
@@ -117,6 +120,25 @@
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- keep exactly as-is -->
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+            <version>${elasticsearch.client.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+            <version>${jakarta.json.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.eclipse.parsson</groupId>
+            <artifactId>parsson</artifactId>
+            <version>${parsson.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -133,16 +155,31 @@
                 </configuration>
             </plugin>
 
+            <!-- JUnit5 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <useSystemClassLoader>false</useSystemClassLoader>
+                    <useModulePath>false</useModulePath>
+                </configuration>
+            </plugin>
+
+            <!-- Single Shade Plugin (3.6.0) with mainClass -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.1</version>
+                <version>3.6.0</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
                         <goals><goal>shade</goal></goals>
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>all</shadedClassifierName>
+
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
@@ -153,6 +190,7 @@
                                     </excludes>
                                 </filter>
                             </filters>
+
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>com.frauddetection.FraudDetectionJob</mainClass>
@@ -164,18 +202,6 @@
                 </executions>
             </plugin>
 
-
-
-            <!-- JUnit5 -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
-                <configuration>
-                    <useSystemClassLoader>false</useSystemClassLoader>
-                    <useModulePath>false</useModulePath>
-                </configuration>
-            </plugin>
         </plugins>
 
         <resources>
@@ -187,6 +213,7 @@
                 </includes>
             </resource>
         </resources>
+
         <testResources>
             <testResource>
                 <directory>src/test/resources</directory>

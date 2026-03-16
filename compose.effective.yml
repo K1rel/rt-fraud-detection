@@ -1,0 +1,277 @@
+name: rt-fraud-detection
+services:
+  api:
+    build:
+      context: /home/k1rel/programming/rt-fraud-detection/api
+      dockerfile: Dockerfile
+    container_name: api
+    depends_on:
+      elasticsearch:
+        condition: service_started
+        required: true
+      kafka:
+        condition: service_started
+        required: true
+    environment:
+      ALERTS_TOPIC: fraud_alerts
+      CACHE_MAX_ENTRIES: "200"
+      ELASTICSEARCH_ALERT_INDEX_PREFIX: fraud-alerts
+      ELASTICSEARCH_NODE: http://elasticsearch:9200
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_CONSUMER_GROUP: api-alert-streamer
+      NODE_ENV: production
+      PORT: "3001"
+      STATS_ANON_SALT: 022dcf711a9e2bee0efb248348711adb
+      STATS_CACHE_TTL_MS: "10000"
+      WS_MAX_CLIENTS: "50"
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3001
+        published: "3001"
+        protocol: tcp
+    restart: unless-stopped
+  elasticsearch:
+    container_name: elasticsearch
+    environment:
+      ES_JAVA_OPTS: -Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m
+      bootstrap.memory_lock: "false"
+      discovery.type: single-node
+      xpack.ml.enabled: "false"
+      xpack.security.enabled: "false"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:9200/_cluster/health | grep -E '"status":"(yellow|green)"' >/dev/null
+      timeout: 10s
+      interval: 15s
+      retries: 40
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.1
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 9200
+        published: "9200"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: esdata
+        target: /usr/share/elasticsearch/data
+        volume: {}
+  jobmanager:
+    cpus: 2
+    command:
+      - jobmanager
+    container_name: flink-jobmanager
+    environment:
+      ALERT_SCORE_THRESHOLD: "0.10"
+      ALERTS_TOPIC: fraud_alerts
+      ELASTICSEARCH_ALERT_INDEX_PREFIX: fraud-alerts
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: "9200"
+      ELASTICSEARCH_SCHEME: http
+      FLINK_CHECKPOINT_INTERVAL_MS: "10000"
+      FLINK_DEFAULT_PARALLELISM: "4"
+      JOB_MANAGER_RPC_ADDRESS: jobmanager
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_CONSUMER_GROUP: fraud-detector
+      LOG4J_CONFIGURATION_FILE: /opt/flink/conf/log4j2.properties
+      ML_FRAUD_THRESHOLD: "0.85"
+      MODEL_VERSION: best_model.onnx
+      ONNX_MODEL_RESOURCE: /model/best_model.onnx
+      ONNX_MODEL_SRC: resource
+      RULE_FREQUENCY_WINDOW_MS: "60000"
+      RULE_HIGH_AMOUNT_THRESHOLD: "1500"
+      RULE_MAX_TX_PER_MINUTE: "6"
+      RULE_MODEL_SCORE_THRESHOLD: "0.65"
+      RULE_VELOCITY_MIN_GAP_MS: "2000"
+      TRANSACTIONS_TOPIC: transactions
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:8081/overview >/dev/null
+      timeout: 5s
+      interval: 10s
+      retries: 30
+    image: apache/flink:2.0.0-java17
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8081
+        published: "8081"
+        protocol: tcp
+      - mode: ingress
+        target: 9249
+        published: "9249"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /home/k1rel/programming/rt-fraud-detection/flink/conf/config.yaml
+        target: /opt/flink/conf/config.yaml
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /home/k1rel/programming/rt-fraud-detection/flink/conf/log4j2.properties
+        target: /opt/flink/conf/log4j2.properties
+        read_only: true
+        bind:
+          create_host_path: true
+      - type: volume
+        source: flink-logs
+        target: /opt/flink/log
+        volume: {}
+      - type: bind
+        source: /home/k1rel/programming/rt-fraud-detection/flink/remote
+        target: /remote
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /home/k1rel/programming/rt-fraud-detection/flink/lib/flink-metrics-prometheus-2.0.0.jar
+        target: /opt/flink/lib/flink-metrics-prometheus-2.0.0.jar
+        read_only: true
+        bind:
+          create_host_path: true
+  kafka:
+    cpus: 2
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+        required: true
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_NUM_PARTITIONS: "6"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_MAX_TIMEOUT_MS: "3600000"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bash -lc 'kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1'
+      timeout: 10s
+      interval: 10s
+      retries: 30
+    image: confluentinc/cp-kafka:7.6.1
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 29092
+        published: "29092"
+        protocol: tcp
+    restart: unless-stopped
+  kibana:
+    container_name: kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+        required: true
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:5601/api/status | grep 'overall' >/dev/null
+      timeout: 10s
+      interval: 20s
+      retries: 30
+    image: docker.elastic.co/kibana/kibana:8.14.1
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 5601
+        published: "5601"
+        protocol: tcp
+    restart: unless-stopped
+  taskmanager:
+    cpus: 4
+    command:
+      - taskmanager
+    depends_on:
+      jobmanager:
+        condition: service_started
+        required: true
+    environment:
+      FLINK_CHECKPOINT_INTERVAL_MS: "10000"
+      FLINK_DEFAULT_PARALLELISM: "4"
+      JOB_MANAGER_RPC_ADDRESS: jobmanager
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_CONSUMER_GROUP: fraud-detector
+      LOG4J_CONFIGURATION_FILE: /opt/flink/conf/log4j2.properties
+      MODEL_VERSION: best_model.onnx
+      ONNX_MODEL_RESOURCE: /model/best_model.onnx
+      ONNX_MODEL_SRC: resource
+      TRANSACTIONS_TOPIC: transactions
+    image: apache/flink:2.0.0-java17
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /home/k1rel/programming/rt-fraud-detection/flink/conf/config.yaml
+        target: /opt/flink/conf/config.yaml
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /home/k1rel/programming/rt-fraud-detection/flink/conf/log4j2.properties
+        target: /opt/flink/conf/log4j2.properties
+        read_only: true
+        bind:
+          create_host_path: true
+      - type: volume
+        source: flink-logs
+        target: /opt/flink/log
+        volume: {}
+      - type: bind
+        source: /home/k1rel/programming/rt-fraud-detection/flink/remote
+        target: /remote
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /home/k1rel/programming/rt-fraud-detection/flink/lib/flink-metrics-prometheus-2.0.0.jar
+        target: /opt/flink/lib/flink-metrics-prometheus-2.0.0.jar
+        read_only: true
+        bind:
+          create_host_path: true
+  zookeeper:
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: "2181"
+      ZOOKEEPER_TICK_TIME: "2000"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bash -lc '</dev/tcp/127.0.0.1/2181'
+      timeout: 5s
+      interval: 10s
+      retries: 20
+    image: confluentinc/cp-zookeeper:7.6.1
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 2181
+        published: "2181"
+        protocol: tcp
+    restart: unless-stopped
+networks:
+  default:
+    name: fraud-detection-net
+volumes:
+  esdata:
+    name: rt-fraud-detection_esdata
+  flink-logs:
+    name: rt-fraud-detection_flink-logs

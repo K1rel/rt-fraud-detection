@@ -1,0 +1,52 @@
+{
+  "index_patterns": ["perf-runs-*"],
+  "priority": 999,
+  "template": {
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "runId": { "type": "keyword" },
+        "mix": { "type": "keyword" },
+        "rate": { "type": "double" },
+        "durationSec": { "type": "double" },
+        "txSent": { "type": "double" },
+
+        "avgSendRate": { "type": "double" },
+        "flinkAvgInPerSec": { "type": "double" },
+        "flinkAvgOutPerSec": { "type": "double" },
+
+        "maxLagFraudDetector": { "type": "double" },
+        "maxLagApiStreamer": { "type": "double" },
+        "maxBackpressureRatio": { "type": "double" },
+
+        "p50LatencyMs": { "type": "double" },
+        "p95LatencyMs": { "type": "double" },
+        "p99LatencyMs": { "type": "double" },
+
+        "esIndexTotalDelta": { "type": "double" },
+        "notes": { "type": "text" },
+
+        "startedAt": { "type": "date" },
+        "createdAt": { "type": "date" },
+
+        "genStart": { "type": "date" },
+        "genEnd": { "type": "date" },
+        "measureEnd": { "type": "date" },
+
+        "genDurationSec": { "type": "double" },
+        "drainSec": { "type": "double" },
+        "totalDurationSec": { "type": "double" },
+
+        "txSentGen": { "type": "double" },
+        "txSentTotal": { "type": "double" },
+        "alertsOutGen": { "type": "double" },
+        "alertsOutTotal": { "type": "double" },
+
+        "peakCpu": { "type": "double" },
+        "peakRam": { "type": "double" }
+
+
+}
+    }
+  }
+}

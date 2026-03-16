@@ -2,12 +2,13 @@ package com.frauddetection;
 
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperationVariant;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.frauddetection.config.RuleConfig;
 import com.frauddetection.domain.alert.FraudAlert;
-import com.frauddetection.functions.FraudDetectionFunction;
 import com.frauddetection.domain.transaction.ScoredTransaction;
 import com.frauddetection.domain.transaction.Transaction;
+import com.frauddetection.functions.FraudDetectionFunction;
 import com.frauddetection.functions.HighConfidenceAlertFilter;
 import com.frauddetection.functions.RuleBasedDetectionFunction;
 import com.frauddetection.serialization.FraudAlertSerializationSchema;
@@ -35,259 +36,206 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
-import java.util.Collections;
-import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
-
-public final class FraudDetectionJob{
+public final class FraudDetectionJob {
     private static final Logger LOG = LoggerFactory.getLogger(FraudDetectionJob.class);
+
     private static final ObjectMapper ALERT_MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
-
-    private FraudDetectionJob(){
+    private FraudDetectionJob() {
         // no-op
     }
 
     public static void main(String[] args) throws Exception {
-        final String bootstrapServers  = requireEnv("KAFKA_BOOTSTRAP_SERVERS");
+        final String bootstrapServers = requireEnv("KAFKA_BOOTSTRAP_SERVERS");
         final String transactionsTopic = requireEnv("TRANSACTIONS_TOPIC");
-        final String consumerGroup     = requireEnv("KAFKA_CONSUMER_GROUP");
+        final String consumerGroup = requireEnv("KAFKA_CONSUMER_GROUP");
         final String alertsTopic = requireEnv("ALERTS_TOPIC");
 
         final long checkpointIntervalMs =
-                parseLongEnv("FLINK_CHECKPOINT_INTERVAL_MS");
-        final int parallelism =
-                parseIntEnv("FLINK_DEFAULT_PARALLELISM");
+        parseLongEnv("FLINK_CHECKPOINT_INTERVAL_MS");
+        final int envParallelism =
+        parseIntEnv("FLINK_DEFAULT_PARALLELISM");
 
         final double mlFraudThreshold = parseDoubleEnv("ML_FRAUD_THRESHOLD");
-
         final double alertScoreThreshold = parseDoubleEnv("ALERT_SCORE_THRESHOLD");
 
         LOG.info(
-                "Starting FraudDetectionJob with bootstrapServers={}, topic={}, group={}, parallelism={}, checkpointIntervalMs={}, alertScoreThreshold={}",
-                bootstrapServers, transactionsTopic, consumerGroup, parallelism, checkpointIntervalMs, alertScoreThreshold
+        "Starting FraudDetectionJob with bootstrapServers={}, topic={}, group={}, envParallelism={}, checkpointIntervalMs={}, alertScoreThreshold={}",
+        bootstrapServers, transactionsTopic, consumerGroup, envParallelism, checkpointIntervalMs, alertScoreThreshold
         );
 
         // --- StreamExecutionEnv ---
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        // --- Checkpointing: EXACTLY_ONCE every 60s ---
-        env.enableCheckpointing(checkpointIntervalMs);
-        env.setParallelism(parallelism);
-
+        // --- Checkpointing ---
+             if (checkpointIntervalMs > 0) {
+                  env.enableCheckpointing(checkpointIntervalMs);
+                    } else {
+                        LOG.warn("Checkpointing disabled (FLINK_CHECKPOINT_INTERVAL_MS={})", checkpointIntervalMs);
+                    }
+        final int effective = env.getParallelism();
+        if(effective <= 0){
+            env.setParallelism(envParallelism);
+            LOG.info("Parallelism not set by CLI using default parallelism {}", env.getParallelism());
+        } else{
+            LOG.info("Parallelism set by CLI: {}", effective);
+        }
         final CheckpointConfig checkpointConfig = env.getCheckpointConfig();
-
-        checkpointConfig.setMinPauseBetweenCheckpoints(checkpointIntervalMs / 2);
-        checkpointConfig.setCheckpointTimeout(10 * 60 * 1000L);
-        checkpointConfig.setTolerableCheckpointFailureNumber(3);
-        checkpointConfig.setExternalizedCheckpointRetention(
-                ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION
-        );
-
-
-        KafkaSource<Transaction> kafkaSource = KafkaSource.<Transaction>builder()
-                .setBootstrapServers(bootstrapServers)
-                .setTopics(transactionsTopic)
-                .setGroupId(consumerGroup)
-                .setStartingOffsets(OffsetsInitializer.earliest())
-                .setValueOnlyDeserializer(new TransactionDeserializationSchema())
-                .setProperty("enable.auto.commit", "false")
-                .build();
-
-        WatermarkStrategy<Transaction> wmStrategy = WatermarkStrategy.<Transaction>forBoundedOutOfOrderness(Duration.ofSeconds(5))
-                .withTimestampAssigner(
-                        (tx, recordTs) -> {
-                            if (tx == null){
-                                return recordTs;
-                            }
-
-                            String s = tx.getEventTime();
-                            if(s == null || s.isBlank()){
-                                s = tx.getTimestamp();
-                            }
-                            if(s == null || s.isBlank()){
-                                return recordTs;
-                            }
-
-                            try{
-                                return Instant.parse(s).toEpochMilli();
-                            } catch (DateTimeParseException e){
-                                LOG.warn(
-                                        "Bad event_time/timestamp '{}', using record timestamp {}",
-                                        s, recordTs
-                                );
-                                return recordTs;
-                            }
-                        }
-                );
-
-        DataStream<Transaction> transactions =
-                env.fromSource(kafkaSource, wmStrategy, "transactions-source")
-                        .filter(Objects::nonNull)
-                        .name("filter-valid-transactions")
-                        .uid("filter-valid-transactions");
-
-        transactions.map(tx -> {
-            if(LOG.isDebugEnabled()){
-                LOG.info(
-                        "Received transaction eventId={} accountId={} amount={} schema={}",
-                        tx.getEventId(),
-                        tx.getAccountId(),
-                        tx.getAmount(),
-                        tx.getSchema()
-                );
-            }
-
-            return tx;
-        })
-                .name("log-transactions")
-                .uid("log-transactions");
-
-        DataStream<ScoredTransaction> scoredTransactions =
-                transactions
-                        .map(new FraudDetectionFunction(mlFraudThreshold))
-                        .name("scored-transactions")
-                        .uid("scored-transactions");
-
-        scoredTransactions
-                .map(st -> {
-                    if(LOG.isDebugEnabled()){
-                        LOG.info(
-                                "Scored transaction eventId={} label={} fraudScore={} modelVersion={}",
-                                st.getTransaction().getEventId(),
-                                st.getTransaction().getFraudLabel(),
-                                st.getFraudScore(),
-                                st.getModelVersion()
+        if (checkpointIntervalMs > 0) {
+                       checkpointConfig.setMinPauseBetweenCheckpoints(Math.max(60_000L, checkpointIntervalMs / 2));
+                        checkpointConfig.setCheckpointTimeout(10 * 60 * 1000L);
+                        checkpointConfig.setTolerableCheckpointFailureNumber(3);
+                        checkpointConfig.setMaxConcurrentCheckpoints(1);
+                        checkpointConfig.setExternalizedCheckpointRetention(
+                            ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION
                         );
                     }
 
-                    return st;
-                })
-                        .name("log-scored-transactions")
-                        .uid("log-scored-transactions");
+        KafkaSource<Transaction> kafkaSource = KafkaSource.<Transaction>builder()
+        .setBootstrapServers(bootstrapServers)
+        .setTopics(transactionsTopic)
+        .setGroupId(consumerGroup)
+        .setStartingOffsets(OffsetsInitializer.earliest())
+        .setValueOnlyDeserializer(new TransactionDeserializationSchema())
+        .setProperty("enable.auto.commit", "false")
+        .build();
+
+        WatermarkStrategy<Transaction> wmStrategy =
+        WatermarkStrategy.<Transaction>forBoundedOutOfOrderness(Duration.ofSeconds(5))
+        .withTimestampAssigner((tx, recordTs) -> {
+            if (tx == null) {
+                return recordTs;
+            }
+
+            String s = tx.getEventTime();
+            if (s == null || s.isBlank()) {
+                s = tx.getTimestamp();
+            }
+            if (s == null || s.isBlank()) {
+                return recordTs;
+            }
+
+            try {
+                return Instant.parse(s).toEpochMilli();
+            } catch (DateTimeParseException e) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Bad event_time/timestamp '{}', using record timestamp {}", s, recordTs);
+                }
+                return recordTs;
+            }
+        });
+
+        DataStream<Transaction> transactions =
+        env.fromSource(kafkaSource, wmStrategy, "transactions-source")
+        .filter(Objects::nonNull)
+        .name("filter-valid-transactions")
+        .uid("filter-valid-transactions");
+
+        DataStream<ScoredTransaction> scoredTransactions =
+        transactions
+        .map(new FraudDetectionFunction(mlFraudThreshold))
+        .name("scored-transactions")
+        .uid("scored-transactions");
 
         RuleConfig ruleConfig = RuleConfig.fromEnv();
         LOG.info("Using rule config: {}", ruleConfig);
 
         DataStream<FraudAlert> alerts =
-                scoredTransactions
-                        .keyBy((KeySelector<ScoredTransaction, String>) st ->
-                                st.getTransaction().getAccountId())
-                                .process(new RuleBasedDetectionFunction(ruleConfig))
-                                .name("rule-based-detection")
-                                .uid("rule-based-detection")
-                        .map(a -> {
-                            LOG.info("PRE_FILTER alert score={} reasons={}", a.getFraudScore(), a.getReasons());
-                            return a;
-                        }).name("debug-pre-filter")
-                                .disableChaining();
+        scoredTransactions
+        .keyBy((KeySelector<ScoredTransaction, String>) st ->
+        st.getTransaction().getAccountId())
+        .process(new RuleBasedDetectionFunction(ruleConfig))
+        .name("rule-based-detection")
+        .uid("rule-based-detection");
 
         DataStream<FraudAlert> highConfidenceAlerts =
-                alerts
-                        .filter(new HighConfidenceAlertFilter(alertScoreThreshold))
-                        .name("filter-high-confidence-alerts")
-                        .uid("filter-high-confidence-alerts")
-                        .disableChaining();
-
-       DataStream<FraudAlert> loggedAlerts = highConfidenceAlerts
-                .map(alert -> {
-
-                        LOG.info(
-                                "ALERT alertId={} eventId={} accountId={} amount={} score={} severity={} method={} reasons={}",
-                                alert.getAlertId(),
-                                alert.getEventId(),
-                                alert.getAccountId(),
-                                alert.getAmount(),
-                                alert.getFraudScore(),
-                                alert.getSeverity(),
-                                alert.getDetectionMethod(),
-                                alert.getReasons()
-                        );
-                        return alert;
-                    })
-                .name("log-alerts")
-                .uid("log-alerts");
+        alerts
+        .filter(new HighConfidenceAlertFilter(alertScoreThreshold))
+        .name("filter-high-confidence-alerts")
+        .uid("filter-high-confidence-alerts");
 
         KafkaSink<FraudAlert> kafkaAlertSink =
-                KafkaSink.<FraudAlert>builder()
-                                .setBootstrapServers(bootstrapServers)
-                                        .setRecordSerializer(
-                                                KafkaRecordSerializationSchema.builder()
-                                                        .setTopic(alertsTopic)
-                                                        .setValueSerializationSchema(new FraudAlertSerializationSchema())
-                                                        .build()
-                                        )
-                                                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
-                                                .build();
+        KafkaSink.<FraudAlert>builder()
+        .setBootstrapServers(bootstrapServers)
+        .setRecordSerializer(
+        KafkaRecordSerializationSchema.builder()
+        .setTopic(alertsTopic)
+        .setValueSerializationSchema(new FraudAlertSerializationSchema())
+        .build()
+        )
+        .setDeliveryGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
+        .setTransactionalIdPrefix("fraud-alerts-" + consumerGroup)
+        .setProperty("transaction.timeout.ms", "900000")
+        .build();
 
-
-        loggedAlerts
-                .sinkTo(kafkaAlertSink)
-                .name("kafka-fraud-alerts-sink")
-                .uid("kafka-fraud-alerts-sink");
+        highConfidenceAlerts
+        .sinkTo(kafkaAlertSink)
+        .name("kafka-fraud-alerts-sink")
+        .uid("kafka-fraud-alerts-sink");
 
         String esHost = envOrDefault("ELASTICSEARCH_HOST", "elasticsearch");
         int esPort = parseIntEnv("ELASTICSEARCH_PORT");
         String esScheme = envOrDefault("ELASTICSEARCH_SCHEME", "http");
         String esIndexPrefix = envOrDefault("ELASTICSEARCH_ALERT_INDEX_PREFIX", "fraud-alerts");
 
+        // FIX: convert POJO -> Map so sink state doesn't depend on your user class
         ElementConverter<FraudAlert, BulkOperationVariant> esConverter =
+        (alert, ctx) -> {
+            if (alert == null) {
+                return null;
+            }
 
-                (alert, ctx) -> {
+            String index = resolveAlertIndex(esIndexPrefix, alert);
+            Map<String, Object> doc = ALERT_MAPPER.convertValue(alert, MAP_TYPE);
 
-                        if (alert == null) {
-                            return null;
-                        }
-
-                        String index = resolveAlertIndex(esIndexPrefix,  alert);
-
-                        return new IndexOperation.Builder<FraudAlert>()
-                                .index(index)
-                                .id(alert.getAlertId())
-                                .document(alert)
-                                .build();
-
-
-                };
+            return new IndexOperation.Builder<Map<String, Object>>()
+            .index(index)
+            .id(alert.getAlertId())
+            .document(doc)
+            .build();
+        };
 
         Elasticsearch8AsyncSink<FraudAlert> esSink =
-                Elasticsearch8AsyncSinkBuilder.<FraudAlert>builder()
-                                .setHosts(new HttpHost(esHost, esPort, esScheme))
-                                .setElementConverter(esConverter)
-                                .setMaxBatchSize(500)
-                                .setMaxBufferedRequests(1000)
-                                .setMaxTimeInBufferMS(1000)
-                                .setMaxInFlightRequests(2)
-                                .build();
+        Elasticsearch8AsyncSinkBuilder.<FraudAlert>builder()
+        .setHosts(new HttpHost(esHost, esPort, esScheme))
+        .setElementConverter(esConverter)
+        .setMaxBatchSize(1000)
+        .setMaxBufferedRequests(5000)
+        .setMaxTimeInBufferMS(500)
+        .setMaxInFlightRequests(6)
+        .build();
 
-        loggedAlerts
-            .sinkTo(esSink)
-            .name("elasticsearch-fraud-alerts-sink")
-            .uid("elasticsearch-fraud-alerts-sink");
+        highConfidenceAlerts
+        .sinkTo(esSink)
+        .name("elasticsearch-fraud-alerts-sink")
+        .uid("elasticsearch-fraud-alerts-sink");
 
         env.execute("FraudDetectionJob");
     }
 
-    private static String resolveAlertIndex(String prefix, FraudAlert alert){
+    private static String resolveAlertIndex(String prefix, FraudAlert alert) {
         String ts = alert.getCreatedAt();
         LocalDate date;
-        try{
-            if(ts != null && !ts.isBlank()){
+        try {
+            if (ts != null && !ts.isBlank()) {
                 date = Instant.parse(ts).atOffset(ZoneOffset.UTC).toLocalDate();
             } else {
                 date = LocalDate.now(ZoneOffset.UTC);
             }
-        } catch (DateTimeParseException e){
+        } catch (DateTimeParseException e) {
             date = LocalDate.now(ZoneOffset.UTC);
         }
 
         return String.format(
-                "%s-%04d-%02d-%02d",
-                prefix,
-                date.getYear(),
-                date.getMonthValue(),
-                date.getDayOfMonth()
+        "%s-%04d-%02d-%02d",
+        prefix,
+        date.getYear(),
+        date.getMonthValue(),
+        date.getDayOfMonth()
         );
     }
 
@@ -315,7 +263,7 @@ public final class FraudDetectionJob{
         }
     }
 
-    private static String envOrDefault(String key,  String defaultValue) {
+    private static String envOrDefault(String key, String defaultValue) {
         String v = System.getenv(key);
         if (v == null || v.isBlank()) {
             return defaultValue;
